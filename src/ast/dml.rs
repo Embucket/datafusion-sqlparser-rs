@@ -32,11 +32,12 @@ use sqlparser_derive::{Visit, VisitMut};
 pub use super::ddl::{ColumnDef, TableConstraint};
 
 use super::{
-    display_comma_separated, display_separated, query::InputFormatClause, Assignment, ClusteredBy,
+    display_comma_separated, display_separated, ClusteredBy,
     CommentDef, Expr, FileFormat, FromTable, HiveDistributionStyle, HiveFormat, HiveIOFormat,
     HiveRowFormat, Ident, InsertAliases, MysqlInsertPriority, ObjectName, OnCommit, OnInsert,
     OneOrManyWithParens, OrderByExpr, Query, RowAccessPolicy, SelectItem, Setting, SqlOption,
-    SqliteOnConflict, TableEngine, TableObject, TableWithJoins, Tag, WrappedCollection,
+    SqliteOnConflict, StorageSerializationPolicy, TableEngine, TableObject, TableWithJoins, Tag,
+    WrappedCollection,
 };
 
 /// CREATE INDEX statement.
