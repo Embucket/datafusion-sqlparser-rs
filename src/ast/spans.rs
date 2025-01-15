@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use core::iter;
 use crate::tokenizer::Span;
+use core::iter;
 
 use super::{
     dcl::SecondaryRoles, AccessExpr, AlterColumnOperation, AlterIndexOperation,
@@ -403,13 +403,13 @@ impl Spanned for Statement {
                 copy_grants: _,
                 with_row_access_policy: _,
                 with_aggregation_policy: _,
-                with_tags:_
+                with_tags: _,
             } => union_spans(
-                    core::iter::once(name.span())
-                        .chain(columns.iter().map(|i| i.span()))
-                        .chain(constraints.iter().map(|i| i.span()))
-                        .chain(with_options.iter().map(|i| i.span()))
-                ),
+                core::iter::once(name.span())
+                    .chain(columns.iter().map(|i| i.span()))
+                    .chain(constraints.iter().map(|i| i.span()))
+                    .chain(with_options.iter().map(|i| i.span())),
+            ),
             Statement::CreateVirtualTable {
                 name,
                 if_not_exists: _,

@@ -881,11 +881,16 @@ fn test_snowflake_create_iceberg_table_all_options() {
 
 #[test]
 fn test_snowflake_create_iceberg_table() {
-    match snowflake().verified_stmt("CREATE ICEBERG TABLE my_table (a INT) BASE_LOCATION = 'relative_path'") {
-        Statement::CreateIcebergTable{name, base_location,..} => {
+    match snowflake()
+        .verified_stmt("CREATE ICEBERG TABLE my_table (a INT) BASE_LOCATION = 'relative_path'")
+    {
+        Statement::CreateIcebergTable {
+            name,
+            base_location,
+            ..
+        } => {
             assert_eq!("my_table", name.to_string());
             assert_eq!("relative_path", base_location);
-
         }
         _ => unreachable!(),
     }

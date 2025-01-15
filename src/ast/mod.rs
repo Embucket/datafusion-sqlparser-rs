@@ -4079,7 +4079,7 @@ impl fmt::Display for Statement {
                 copy_grants,
                 with_row_access_policy,
                 with_aggregation_policy,
-                with_tags
+                with_tags,
             } => {
                 write!(
                     f,
@@ -4126,9 +4126,11 @@ impl fmt::Display for Statement {
                     write!(f, " CATALOG_SYNC = '{catalog_sync}'")?;
                 }
 
-                if let Some(storage_serialization_policy) =
-                    storage_serialization_policy {
-                    write!(f, " STORAGE_SERIALIZATION_POLICY = {storage_serialization_policy}")?;
+                if let Some(storage_serialization_policy) = storage_serialization_policy {
+                    write!(
+                        f,
+                        " STORAGE_SERIALIZATION_POLICY = {storage_serialization_policy}"
+                    )?;
                 }
 
                 if *copy_grants {
@@ -8216,7 +8218,7 @@ impl fmt::Display for SessionParamValue {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum StorageSerializationPolicy {
     Compatible,
-    Optimized
+    Optimized,
 }
 
 impl Display for StorageSerializationPolicy {

@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use super::keywords::RESERVED_FOR_IDENTIFIER;
 #[cfg(not(feature = "std"))]
 use crate::alloc::string::ToString;
 use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
@@ -22,7 +23,12 @@ use crate::ast::helpers::stmt_data_loading::{
     DataLoadingOption, DataLoadingOptionType, DataLoadingOptions, FileStagingCommand,
     StageLoadSelectItem, StageParamsObject,
 };
-use crate::ast::{ColumnOption, ColumnPolicy, ColumnPolicyProperty, CreateTable, FileFormat, Ident, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, ObjectName, RowAccessPolicy, Statement, TagsColumnOption, WrappedCollection};
+use crate::ast::{
+    ColumnOption, ColumnPolicy, ColumnPolicyProperty, CreateTable, FileFormat, Ident,
+    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
+    IdentityPropertyOrder, ObjectName, RowAccessPolicy, Statement, TagsColumnOption,
+    WrappedCollection,
+};
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
 use crate::parser::{Parser, ParserError};
@@ -34,7 +40,6 @@ use alloc::vec::Vec;
 #[cfg(not(feature = "std"))]
 use alloc::{format, vec};
 use sqlparser::ast::StorageSerializationPolicy;
-use super::keywords::RESERVED_FOR_IDENTIFIER;
 
 /// A [`Dialect`] for [Snowflake](https://www.snowflake.com/)
 #[derive(Debug, Default)]
@@ -135,14 +140,12 @@ impl Dialect for SnowflakeDialect {
                 _ => {}
             }
 
-
             if parser.parse_keyword(Keyword::STAGE) {
                 // OK - this is CREATE STAGE statement
                 return Some(parse_create_stage(or_replace, temporary, parser));
             } else if parser.parse_keyword(Keyword::ICEBERG) {
                 return Some(parse_create_iceberg_table(or_replace, parser));
-            }
-            else if parser.parse_keyword(Keyword::TABLE) {
+            } else if parser.parse_keyword(Keyword::TABLE) {
                 return Some(parse_create_table(
                     or_replace, global, temporary, volatile, transient, parser,
                 ));
@@ -306,7 +309,12 @@ impl CreateIcebergTableBuilder {
     }
 }
 
-pub fn parse_create_table_common_token(parser: &mut Parser, builder: CreateTableBuilder, token: TokenWithSpan, should_break: &mut bool) -> Result<CreateTableBuilder, ParserError> {
+pub fn parse_create_table_common_token(
+    parser: &mut Parser,
+    builder: CreateTableBuilder,
+    token: TokenWithSpan,
+    should_break: &mut bool,
+) -> Result<CreateTableBuilder, ParserError> {
     match &token.token {
         Token::Word(word) => match word.keyword {
             Keyword::COPY => {
@@ -317,7 +325,6 @@ pub fn parse_create_table_common_token(parser: &mut Parser, builder: CreateTable
                 // Rewind the COMMENT keyword
                 parser.prev_token();
                 Ok(builder.comment(parser.parse_optional_inline_comment()?))
-
             }
             Keyword::AS => {
                 let query = parser.parse_query()?;
@@ -344,7 +351,7 @@ pub fn parse_create_table_common_token(parser: &mut Parser, builder: CreateTable
 
                 Ok(builder.cluster_by(cluster_by))
             }
-           Keyword::CHANGE_TRACKING => {
+            Keyword::CHANGE_TRACKING => {
                 parser.expect_token(&Token::Eq)?;
                 let change_tracking =
                     match parser.parse_one_of_keywords(&[Keyword::TRUE, Keyword::FALSE]) {
@@ -365,8 +372,7 @@ pub fn parse_create_table_common_token(parser: &mut Parser, builder: CreateTable
             Keyword::MAX_DATA_EXTENSION_TIME_IN_DAYS => {
                 parser.expect_token(&Token::Eq)?;
                 let max_data_extension_time_in_days = parser.parse_literal_uint()?;
-                Ok(builder
-                    .max_data_extension_time_in_days(Some(max_data_extension_time_in_days)))
+                Ok(builder.max_data_extension_time_in_days(Some(max_data_extension_time_in_days)))
             }
             // WITH is optional, we just verify that next token is one of the expected ones and
             // fallback to the default match statement
@@ -404,9 +410,7 @@ pub fn parse_create_table_common_token(parser: &mut Parser, builder: CreateTable
                 let on_commit = Some(parser.parse_create_table_on_commit()?);
                 Ok(builder.on_commit(on_commit))
             }
-            _ => {
-                parser.expected("end of statement", token)
-            }
+            _ => parser.expected("end of statement", token),
         },
         Token::LParen => {
             parser.prev_token();
@@ -432,9 +436,7 @@ pub fn parse_create_table_common_token(parser: &mut Parser, builder: CreateTable
             parser.prev_token();
             Ok(builder)
         }
-        _ => {
-            parser.expected("end of statement", token)
-        }
+        _ => parser.expected("end of statement", token),
     }
 }
 
@@ -490,14 +492,24 @@ pub fn parse_create_table(
                     builder = builder.default_ddl_collation(Some(default_ddl_collation));
                 }
                 _ => {
-                    builder = parse_create_table_common_token(parser, builder, next_token, &mut should_break)?;
+                    builder = parse_create_table_common_token(
+                        parser,
+                        builder,
+                        next_token,
+                        &mut should_break,
+                    )?;
                     if should_break {
                         break;
                     };
                 }
             },
             _ => {
-                builder = parse_create_table_common_token(parser, builder, next_token, &mut should_break)?;
+                builder = parse_create_table_common_token(
+                    parser,
+                    builder,
+                    next_token,
+                    &mut should_break,
+                )?;
                 if should_break {
                     break;
                 }
@@ -508,7 +520,9 @@ pub fn parse_create_table(
     Ok(builder.build())
 }
 
-pub fn parse_storage_serialization_policy(parser: &mut Parser) -> Result<StorageSerializationPolicy, ParserError> {
+pub fn parse_storage_serialization_policy(
+    parser: &mut Parser,
+) -> Result<StorageSerializationPolicy, ParserError> {
     let next_token = parser.next_token();
     match &next_token.token {
         Token::Word(w) => match w.keyword {
@@ -522,17 +536,21 @@ pub fn parse_storage_serialization_policy(parser: &mut Parser) -> Result<Storage
 
 /// Parse snowflake create iceberg table statement.
 /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
-pub fn parse_create_iceberg_table(or_replace: bool, parser: &mut Parser) -> Result<Statement, ParserError> {
+pub fn parse_create_iceberg_table(
+    or_replace: bool,
+    parser: &mut Parser,
+) -> Result<Statement, ParserError> {
     if !parser.parse_keyword(Keyword::TABLE) {
         return parser.expected("TABLE", parser.peek_token());
     }
-
 
     let if_not_exists = parser.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
     let table_name = parser.parse_object_name(false)?;
 
     let mut builder = CreateIcebergTableBuilder {
-        base: CreateTableBuilder::new(table_name).or_replace(or_replace).if_not_exists(if_not_exists),
+        base: CreateTableBuilder::new(table_name)
+            .or_replace(or_replace)
+            .if_not_exists(if_not_exists),
         external_volume: None,
         catalog: None,
         base_location: None,
@@ -564,17 +582,28 @@ pub fn parse_create_iceberg_table(or_replace: bool, parser: &mut Parser) -> Resu
                 Keyword::STORAGE_SERIALIZATION_POLICY => {
                     parser.expect_token(&Token::Eq)?;
 
-                    builder.storage_serialization_policy = Some(parse_storage_serialization_policy(parser)?);
+                    builder.storage_serialization_policy =
+                        Some(parse_storage_serialization_policy(parser)?);
                 }
                 _ => {
-                    builder.base = parse_create_table_common_token(parser, builder.base, next_token, &mut should_break)?;
+                    builder.base = parse_create_table_common_token(
+                        parser,
+                        builder.base,
+                        next_token,
+                        &mut should_break,
+                    )?;
                     if should_break {
                         break;
                     }
                 }
             },
             _ => {
-                builder.base = parse_create_table_common_token(parser, builder.base, next_token, &mut should_break)?;
+                builder.base = parse_create_table_common_token(
+                    parser,
+                    builder.base,
+                    next_token,
+                    &mut should_break,
+                )?;
                 if should_break {
                     break;
                 }
@@ -583,7 +612,9 @@ pub fn parse_create_iceberg_table(or_replace: bool, parser: &mut Parser) -> Resu
     }
 
     if builder.base_location.is_none() {
-        return Err(ParserError::ParserError("BASE_LOCATION is required".to_string()));
+        return Err(ParserError::ParserError(
+            "BASE_LOCATION is required".to_string(),
+        ));
     }
 
     Ok(builder.build())
