@@ -853,9 +853,15 @@ fn test_snowflake_create_table_with_several_column_options() {
 fn test_snowflake_create_iceberg_table_all_options() {
     match snowflake().verified_stmt("CREATE ICEBERG TABLE my_table (a INT, b INT) \
     CLUSTER BY (a, b) EXTERNAL_VOLUME = 'volume' CATALOG = 'SNOWFLAKE' BASE_LOCATION = 'relative/path' CATALOG_SYNC = 'OPEN_CATALOG' \
-     STORAGE_SERIALIZATION_POLICY = COMPATIBLE COPY GRANTS CHANGE_TRACKING = TRUE DATA_RETENTION_TIME_IN_DAYS = 5 MAX_DATA_EXTENSION_TIME_IN_DAYS = 10") {
+    STORAGE_SERIALIZATION_POLICY = COMPATIBLE COPY GRANTS CHANGE_TRACKING = TRUE DATA_RETENTION_TIME_IN_DAYS = 5 MAX_DATA_EXTENSION_TIME_IN_DAYS = 10 \
+    WITH AGGREGATION POLICY policy_name WITH ROW ACCESS POLICY policy_name ON (a) WITH TAG (A='TAG A', B='TAG B')") {
         Statement::CreateIcebergTable {
-            name, cluster_by, base_location, external_volume, catalog, catalog_sync, storage_serialization_policy, change_tracking, copy_grants, data_retention_time_in_days, max_data_extension_time_in_days, ..
+            name, cluster_by, base_location,
+            external_volume, catalog, catalog_sync,
+            storage_serialization_policy, change_tracking,
+            copy_grants, data_retention_time_in_days,
+            max_data_extension_time_in_days, with_aggregation_policy,
+            with_row_access_policy, with_tags, ..
         } => {
             assert_eq!("my_table", name.to_string());
             assert_eq!(
@@ -874,6 +880,19 @@ fn test_snowflake_create_iceberg_table_all_options() {
             assert!(copy_grants);
             assert_eq!(Some(5), data_retention_time_in_days);
             assert_eq!(Some(10), max_data_extension_time_in_days);
+            assert_eq!(
+                Some("WITH ROW ACCESS POLICY policy_name ON (a)".to_string()),
+                with_row_access_policy.map(|policy| policy.to_string())
+            );
+            assert_eq!(
+                Some("policy_name".to_string()),
+                with_aggregation_policy.map(|name| name.to_string())
+            );
+            assert_eq!(Some(vec![
+                                        Tag::new("A".into(), "TAG A".into()),
+                                        Tag::new("B".into(), "TAG B".into()),
+                                    ]), with_tags);
+
         }
         _ => unreachable!(),
     }
