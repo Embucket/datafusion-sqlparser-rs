@@ -916,6 +916,15 @@ fn test_snowflake_create_iceberg_table() {
 }
 
 #[test]
+fn test_snowflake_create_iceberg_table_without_location() {
+    let res = snowflake().parse_sql_statements("CREATE ICEBERG TABLE my_table (a INT)");
+    assert_eq!(
+        ParserError::ParserError("BASE_LOCATION is required".to_string()),
+        res.unwrap_err()
+    );
+}
+
+#[test]
 fn parse_sf_create_or_replace_view_with_comment_missing_equal() {
     assert!(snowflake_and_generic()
         .parse_sql_statements("CREATE OR REPLACE VIEW v COMMENT = 'hello, world' AS SELECT 1")
