@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use super::keywords::RESERVED_FOR_IDENTIFIER;
 #[cfg(not(feature = "std"))]
 use crate::alloc::string::ToString;
 use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
@@ -40,6 +39,8 @@ use alloc::vec::Vec;
 #[cfg(not(feature = "std"))]
 use alloc::{format, vec};
 use sqlparser::ast::StorageSerializationPolicy;
+
+use super::keywords::RESERVED_FOR_IDENTIFIER;
 
 /// A [`Dialect`] for [Snowflake](https://www.snowflake.com/)
 #[derive(Debug, Default)]
