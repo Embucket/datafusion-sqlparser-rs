@@ -295,7 +295,7 @@ impl Dialect for SnowflakeDialect {
     fn is_select_item_alias(&self, explicit: bool, kw: &Keyword, parser: &mut Parser) -> bool {
         explicit
             || match kw {
-            // The following keywords can be considered an alias as long as 
+            // The following keywords can be considered an alias as long as
             // they are not followed by other tokens that may change their meaning
             // e.g. `SELECT * EXCEPT (col1) FROM tbl`
             Keyword::EXCEPT
@@ -317,8 +317,8 @@ impl Dialect for SnowflakeDialect {
                 false
             }
 
-            // Reserved keywords by the Snowflake dialect, which seem to be less strictive 
-            // than what is listed in `keywords::RESERVED_FOR_COLUMN_ALIAS`. The following 
+            // Reserved keywords by the Snowflake dialect, which seem to be less strictive
+            // than what is listed in `keywords::RESERVED_FOR_COLUMN_ALIAS`. The following
             // keywords were tested with the this statement: `SELECT 1 <KW>`.
             Keyword::FROM
             | Keyword::GROUP
