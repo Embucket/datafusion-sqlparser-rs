@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::tokenizer::Span;
 use core::iter;
+use crate::tokenizer::Span;
 
 use super::{
     dcl::SecondaryRoles, AccessExpr, AlterColumnOperation, AlterIndexOperation,
