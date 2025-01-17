@@ -1352,6 +1352,12 @@ impl Spanned for Expr {
                 escape_char: _,
                 any: _,
             } => expr.span().union(&pattern.span()),
+            Expr::RLike { .. } => Span::empty(),
+            Expr::IsNormalized {
+                expr,
+                form: _,
+                negated: _,
+            } => expr.span(),
             Expr::SimilarTo {
                 negated: _,
                 expr,
@@ -1387,7 +1393,6 @@ impl Spanned for Expr {
             Expr::Array(array) => array.span(),
             Expr::MatchAgainst { .. } => Span::empty(),
             Expr::JsonAccess { value, path } => value.span().union(&path.span()),
-            Expr::RLike { .. } => Span::empty(),
             Expr::AnyOp {
                 left,
                 compare_op: _,
