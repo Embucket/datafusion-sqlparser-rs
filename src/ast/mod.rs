@@ -7631,6 +7631,195 @@ impl Display for JsonNullClause {
     }
 }
 
+/// rename object definition
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct RenameTable {
+    pub old_name: ObjectName,
+    pub new_name: ObjectName,
+}
+
+impl fmt::Display for RenameTable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} TO {}", self.old_name, self.new_name)?;
+        Ok(())
+    }
+}
+
+/// Represents the referenced table in an `INSERT INTO` statement
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum TableObject {
+    /// Table specified by name.
+    /// Example:
+    /// ```sql
+    /// INSERT INTO my_table
+    /// ```
+    TableName(#[cfg_attr(feature = "visitor", visit(with = "visit_relation"))] ObjectName),
+
+    /// Table specified as a function.
+    /// Example:
+    /// ```sql
+    /// INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
+    /// ```
+    /// [Clickhouse](https://clickhouse.com/docs/en/sql-reference/table-functions)
+    TableFunction(Function),
+}
+
+impl fmt::Display for TableObject {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::TableName(table_name) => write!(f, "{table_name}"),
+            Self::TableFunction(func) => write!(f, "FUNCTION {}", func),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum SetSessionParamKind {
+    Generic(SetSessionParamGeneric),
+    IdentityInsert(SetSessionParamIdentityInsert),
+    Offsets(SetSessionParamOffsets),
+    Statistics(SetSessionParamStatistics),
+}
+
+impl fmt::Display for SetSessionParamKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SetSessionParamKind::Generic(x) => write!(f, "{x}"),
+            SetSessionParamKind::IdentityInsert(x) => write!(f, "{x}"),
+            SetSessionParamKind::Offsets(x) => write!(f, "{x}"),
+            SetSessionParamKind::Statistics(x) => write!(f, "{x}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SetSessionParamGeneric {
+    pub names: Vec<String>,
+    pub value: String,
+}
+
+impl fmt::Display for SetSessionParamGeneric {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", display_comma_separated(&self.names), self.value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SetSessionParamIdentityInsert {
+    pub obj: ObjectName,
+    pub value: SessionParamValue,
+}
+
+impl fmt::Display for SetSessionParamIdentityInsert {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "IDENTITY_INSERT {} {}", self.obj, self.value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SetSessionParamOffsets {
+    pub keywords: Vec<String>,
+    pub value: SessionParamValue,
+}
+
+impl fmt::Display for SetSessionParamOffsets {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "OFFSETS {} {}",
+            display_comma_separated(&self.keywords),
+            self.value
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct SetSessionParamStatistics {
+    pub topic: SessionParamStatsTopic,
+    pub value: SessionParamValue,
+}
+
+impl fmt::Display for SetSessionParamStatistics {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "STATISTICS {} {}", self.topic, self.value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum SessionParamStatsTopic {
+    IO,
+    Profile,
+    Time,
+    Xml,
+}
+
+impl fmt::Display for SessionParamStatsTopic {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SessionParamStatsTopic::IO => write!(f, "IO"),
+            SessionParamStatsTopic::Profile => write!(f, "PROFILE"),
+            SessionParamStatsTopic::Time => write!(f, "TIME"),
+            SessionParamStatsTopic::Xml => write!(f, "XML"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum SessionParamValue {
+    On,
+    Off,
+}
+
+impl fmt::Display for SessionParamValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SessionParamValue::On => write!(f, "ON"),
+            SessionParamValue::Off => write!(f, "OFF"),
+        }
+    }
+}
+
+/// Snowflake StorageSerializationPolicy for Iceberg Tables
+/// ```sql
+/// [ STORAGE_SERIALIZATION_POLICY = { COMPATIBLE | OPTIMIZED } ]
+/// ```
+///
+/// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum StorageSerializationPolicy {
+    Compatible,
+    Optimized,
+}
+
+impl Display for StorageSerializationPolicy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StorageSerializationPolicy::Compatible => write!(f, "COMPATIBLE"),
+            StorageSerializationPolicy::Optimized => write!(f, "OPTIMIZED"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
