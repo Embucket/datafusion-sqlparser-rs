@@ -15,8 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::tokenizer::Span;
+use crate::ast::query::SelectItemQualifiedWildcardKind;
 use core::iter;
+
+use crate::tokenizer::Span;
 
 use super::{
     dcl::SecondaryRoles, AccessExpr, AlterColumnOperation, AlterIndexOperation,
@@ -383,33 +385,6 @@ impl Spanned for Statement {
                     .chain(to.iter().map(|i| i.span())),
             ),
             Statement::CreateTable(create_table) => create_table.span(),
-            Statement::CreateIcebergTable {
-                or_replace: _,
-                if_not_exists: _,
-                name,
-                columns,
-                constraints,
-                with_options,
-                comment: _,
-                cluster_by: _,
-                external_volume: _,
-                catalog: _,
-                base_location: _,
-                catalog_sync: _,
-                storage_serialization_policy: _,
-                data_retention_time_in_days: _,
-                max_data_extension_time_in_days: _,
-                change_tracking: _,
-                copy_grants: _,
-                with_row_access_policy: _,
-                with_aggregation_policy: _,
-                with_tags: _,
-            } => union_spans(
-                core::iter::once(name.span())
-                    .chain(columns.iter().map(|i| i.span()))
-                    .chain(constraints.iter().map(|i| i.span()))
-                    .chain(with_options.iter().map(|i| i.span())),
-            ),
             Statement::CreateVirtualTable {
                 name,
                 if_not_exists: _,
@@ -515,7 +490,6 @@ impl Spanned for Statement {
             Statement::DropPolicy { .. } => Span::empty(),
             Statement::ShowDatabases { .. } => Span::empty(),
             Statement::ShowSchemas { .. } => Span::empty(),
-            Statement::ShowObjects { .. } => Span::empty(),
             Statement::ShowViews { .. } => Span::empty(),
             Statement::LISTEN { .. } => Span::empty(),
             Statement::NOTIFY { .. } => Span::empty(),
@@ -1650,16 +1624,23 @@ impl Spanned for JsonPathElem {
     }
 }
 
+impl Spanned for SelectItemQualifiedWildcardKind {
+    fn span(&self) -> Span {
+        match self {
+            SelectItemQualifiedWildcardKind::ObjectName(object_name) => object_name.span(),
+            SelectItemQualifiedWildcardKind::Expr(expr) => expr.span(),
+        }
+    }
+}
+
 impl Spanned for SelectItem {
     fn span(&self) -> Span {
         match self {
             SelectItem::UnnamedExpr(expr) => expr.span(),
             SelectItem::ExprWithAlias { expr, alias } => expr.span().union(&alias.span),
-            SelectItem::QualifiedWildcard(object_name, wildcard_additional_options) => union_spans(
-                object_name
-                    .0
-                    .iter()
-                    .map(|i| i.span())
+            SelectItem::QualifiedWildcard(kind, wildcard_additional_options) => union_spans(
+                [kind.span()]
+                    .into_iter()
                     .chain(iter::once(wildcard_additional_options.span())),
             ),
             SelectItem::Wildcard(wildcard_additional_options) => wildcard_additional_options.span(),
