@@ -1001,6 +1001,8 @@ pub const RESERVED_FOR_TABLE_ALIAS: &[Keyword] = &[
     Keyword::ANTI,
     Keyword::SEMI,
     Keyword::RETURNING,
+    Keyword::ASOF,
+    Keyword::MATCH_CONDITION,
     // for MSSQL-specific OUTER APPLY (seems reserved in most dialects)
     Keyword::OUTER,
     Keyword::SET,
