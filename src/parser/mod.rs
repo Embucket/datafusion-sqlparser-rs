@@ -4553,13 +4553,14 @@ impl<'a> Parser<'a> {
         temporary: bool,
     ) -> Result<Statement, ParserError> {
         let name = self.parse_object_name(false)?;
-
         self.expect_token(&Token::LParen)?;
-        let args = if Token::RParen != self.peek_token_ref().token {
-            self.parse_comma_separated(Parser::parse_function_arg)?
+        let args = if self.consume_token(&Token::RParen) {
+            self.prev_token();
+            None
         } else {
-            vec![]
+            Some(self.parse_comma_separated(Parser::parse_function_arg)?)
         };
+
         self.expect_token(&Token::RParen)?;
 
         let return_type = if self.parse_keyword(Keyword::RETURNS) {
@@ -4655,7 +4656,7 @@ impl<'a> Parser<'a> {
             or_replace,
             temporary,
             name,
-            args: Some(args),
+            args,
             return_type,
             behavior: body.behavior,
             called_on_null: body.called_on_null,
