@@ -63,7 +63,7 @@ fn parse_table_time_travel() {
         select.from,
         vec![TableWithJoins {
             relation: TableFactor::Table {
-                name: ObjectName::from(vec![Ident::new("t1")]),
+                name: ObjectName(vec![Ident::new("t1")]),
                 alias: None,
                 args: None,
                 with_hints: vec![],
@@ -159,7 +159,7 @@ fn parse_create_procedure() {
                     }))
                 }
             ]),
-            name: ObjectName::from(vec![Ident {
+            name: ObjectName(vec![Ident {
                 value: "test".into(),
                 quote_style: None,
                 span: Span::empty(),
@@ -211,7 +211,7 @@ fn parse_mssql_openjson() {
     assert_eq!(
         vec![TableWithJoins {
             relation: TableFactor::Table {
-                name: ObjectName::from(vec![Ident::new("t_test_table")]),
+                name: ObjectName(vec![Ident::new("t_test_table")]),
                 alias: Some(TableAlias {
                     name: Ident::new("A"),
                     columns: vec![]
@@ -270,7 +270,7 @@ fn parse_mssql_openjson() {
     assert_eq!(
         vec![TableWithJoins {
             relation: TableFactor::Table {
-                name: ObjectName::from(vec![Ident::new("t_test_table"),]),
+                name: ObjectName(vec![Ident::new("t_test_table"),]),
                 alias: Some(TableAlias {
                     name: Ident::new("A"),
                     columns: vec![]
@@ -329,7 +329,8 @@ fn parse_mssql_openjson() {
     assert_eq!(
         vec![TableWithJoins {
             relation: TableFactor::Table {
-                name: ObjectName::from(vec![Ident::new("t_test_table")]),
+                name: ObjectName(vec![Ident::new("t_test_table")]),
+
                 alias: Some(TableAlias {
                     name: Ident::new("A"),
                     columns: vec![]
@@ -388,7 +389,7 @@ fn parse_mssql_openjson() {
     assert_eq!(
         vec![TableWithJoins {
             relation: TableFactor::Table {
-                name: ObjectName::from(vec![Ident::new("t_test_table")]),
+                name: ObjectName(vec![Ident::new("t_test_table")]),
                 alias: Some(TableAlias {
                     name: Ident::new("A"),
                     columns: vec![]
@@ -427,7 +428,7 @@ fn parse_mssql_openjson() {
     assert_eq!(
         vec![TableWithJoins {
             relation: TableFactor::Table {
-                name: ObjectName::from(vec![Ident::new("t_test_table")]),
+                name: ObjectName(vec![Ident::new("t_test_table")]),
                 alias: Some(TableAlias {
                     name: Ident::new("A"),
                     columns: vec![]
@@ -531,7 +532,7 @@ fn parse_mssql_create_role() {
             assert_eq_vec(&["mssql"], &names);
             assert_eq!(
                 authorization_owner,
-                Some(ObjectName::from(vec![Ident {
+                Some(ObjectName(vec![Ident {
                     value: "helena".into(),
                     quote_style: None,
                     span: Span::empty(),
@@ -618,10 +619,7 @@ fn parse_delimited_identifiers() {
             version,
             ..
         } => {
-            assert_eq!(
-                ObjectName::from(vec![Ident::with_quote('"', "a table")]),
-                name
-            );
+            assert_eq!(vec![Ident::with_quote('"', "a table")], name.0);
             assert_eq!(Ident::with_quote('"', "alias"), alias.unwrap().name);
             assert!(args.is_none());
             assert!(with_hints.is_empty());
@@ -640,7 +638,7 @@ fn parse_delimited_identifiers() {
     );
     assert_eq!(
         &Expr::Function(Function {
-            name: ObjectName::from(vec![Ident::with_quote('"', "myfun")]),
+            name: ObjectName(vec![Ident::with_quote('"', "myfun")]),
             uses_odbc_syntax: false,
             parameters: FunctionArguments::None,
             args: FunctionArguments::List(FunctionArgumentList {
@@ -673,11 +671,11 @@ fn parse_table_name_in_square_brackets() {
     let select = ms().verified_only_select(r#"SELECT [a column] FROM [a schema].[a table]"#);
     if let TableFactor::Table { name, .. } = only(select.from).relation {
         assert_eq!(
-            ObjectName::from(vec![
+            vec![
                 Ident::with_quote('[', "a schema"),
                 Ident::with_quote('[', "a table")
-            ]),
-            name
+            ],
+            name.0
         );
     } else {
         panic!("Expecting TableFactor::Table");
@@ -1088,7 +1086,7 @@ fn parse_substring_in_select() {
                         })],
                         into: None,
                         from: vec![TableWithJoins {
-                            relation: table_from_name(ObjectName::from(vec![Ident {
+                            relation: table_from_name(ObjectName(vec![Ident {
                                 value: "test".to_string(),
                                 quote_style: None,
                                 span: Span::empty(),
@@ -1206,7 +1204,7 @@ fn parse_mssql_declare() {
             Statement::SetVariable {
                 local: false,
                 hivevar: false,
-                variables: OneOrManyWithParens::One(ObjectName::from(vec![Ident::new("@bar")])),
+                variables: OneOrManyWithParens::One(ObjectName(vec![Ident::new("@bar")])),
                 value: vec![Expr::Value(Value::Number("2".parse().unwrap(), false))],
             },
             Statement::Query(Box::new(Query {
@@ -1300,7 +1298,7 @@ fn parse_use() {
         // Test single identifier without quotes
         assert_eq!(
             ms().verified_stmt(&format!("USE {}", object_name)),
-            Statement::Use(Use::Object(ObjectName::from(vec![Ident::new(
+            Statement::Use(Use::Object(ObjectName(vec![Ident::new(
                 object_name.to_string()
             )])))
         );
@@ -1308,7 +1306,7 @@ fn parse_use() {
             // Test single identifier with different type of quotes
             assert_eq!(
                 ms().verified_stmt(&format!("USE {}{}{}", quote, object_name, quote)),
-                Statement::Use(Use::Object(ObjectName::from(vec![Ident::with_quote(
+                Statement::Use(Use::Object(ObjectName(vec![Ident::with_quote(
                     quote,
                     object_name.to_string(),
                 )])))
@@ -1410,7 +1408,7 @@ fn parse_create_table_with_valid_options() {
                     },
                     value: Expr::Function(
                         Function {
-                            name: ObjectName::from(
+                            name: ObjectName(
                                 vec![
                                     Ident {
                                         value: "HASH".to_string(),
@@ -1474,7 +1472,7 @@ fn parse_create_table_with_valid_options() {
                 if_not_exists: false,
                 transient: false,
                 volatile: false,
-                name: ObjectName::from(vec![Ident {
+                name: ObjectName(vec![Ident {
                     value: "mytable".to_string(),
                     quote_style: None,
                     span: Span::empty(),
@@ -1650,7 +1648,7 @@ fn parse_create_table_with_identity_column() {
                 transient: false,
                 volatile: false,
                 iceberg: false,
-                name: ObjectName::from(vec![Ident {
+                name: ObjectName(vec![Ident {
                     value: "mytable".to_string(),
                     quote_style: None,
                     span: Span::empty(),
