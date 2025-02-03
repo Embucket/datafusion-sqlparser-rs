@@ -545,6 +545,7 @@ define_keywords!(
     NUMERIC,
     NVARCHAR,
     OBJECT,
+    OBJECTS,
     OCCURRENCES_REGEX,
     OCTETS,
     OCTET_LENGTH,
