@@ -2957,7 +2957,6 @@ fn test_parse_show_schemas() {
 
 #[test]
 fn test_parse_show_objects() {
-    //Only happy path for now
     snowflake().verified_stmt("SHOW OBJECTS");
     snowflake().verified_stmt("SHOW OBJECTS IN abc");
     snowflake().verified_stmt("SHOW OBJECTS LIKE '%test%' IN abc");
