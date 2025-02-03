@@ -460,7 +460,6 @@ fn parse_delimited_identifiers() {
             partitions: _,
             json_path: _,
             sample: _,
-            index_hints: _,
         } => {
             assert_eq!(
                 ObjectName::from(vec![Ident::with_quote('"', "a table")]),

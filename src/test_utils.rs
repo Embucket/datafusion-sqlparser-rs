@@ -362,7 +362,6 @@ pub fn table(name: impl Into<String>) -> TableFactor {
         with_ordinality: false,
         json_path: None,
         sample: None,
-        index_hints: vec![],
     }
 }
 
@@ -377,7 +376,6 @@ pub fn table_from_name(name: ObjectName) -> TableFactor {
         with_ordinality: false,
         json_path: None,
         sample: None,
-        index_hints: vec![],
     }
 }
 
@@ -395,7 +393,6 @@ pub fn table_with_alias(name: impl Into<String>, alias: impl Into<String>) -> Ta
         with_ordinality: false,
         json_path: None,
         sample: None,
-        index_hints: vec![],
     }
 }
 
