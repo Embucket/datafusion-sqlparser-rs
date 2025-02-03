@@ -1045,9 +1045,7 @@ pub enum Expr {
     /// param -> expr | (param1, ...) -> expr
     /// ```
     ///
-    /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/functions#higher-order-functions---operator-and-lambdaparams-expr-function)
-    /// [Databricks](https://docs.databricks.com/en/sql/language-manual/sql-ref-lambda-functions.html)
-    /// [DuckDb](https://duckdb.org/docs/sql/functions/lambda.html)
+    /// See <https://docs.databricks.com/en/sql/language-manual/sql-ref-lambda-functions.html>.
     Lambda(LambdaFunction),
 }
 
