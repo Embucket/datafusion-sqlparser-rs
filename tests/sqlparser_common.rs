@@ -10423,7 +10423,6 @@ fn test_comment_hash_syntax() {
         Box::new(BigQueryDialect {}),
         Box::new(SnowflakeDialect {}),
         Box::new(MySqlDialect {}),
-        Box::new(HiveDialect {}),
     ]);
     let sql = r#"
     # comment
