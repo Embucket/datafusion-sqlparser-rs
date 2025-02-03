@@ -90,9 +90,4 @@ impl Dialect for MsSqlDialect {
     fn supports_set_stmt_without_operator(&self) -> bool {
         true
     }
-
-    /// See: <https://learn.microsoft.com/en-us/sql/relational-databases/tables/querying-data-in-a-system-versioned-temporal-table>
-    fn supports_timestamp_versioning(&self) -> bool {
-        true
-    }
 }

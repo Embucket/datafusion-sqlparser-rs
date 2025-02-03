@@ -307,11 +307,6 @@ impl Dialect for SnowflakeDialect {
             _ => true,
         }
     }
-
-    /// See: <https://docs.snowflake.com/en/sql-reference/constructs/at-before>
-    fn supports_timestamp_versioning(&self) -> bool {
-        true
-    }
 }
 
 fn parse_file_staging_command(kw: Keyword, parser: &mut Parser) -> Result<Statement, ParserError> {
