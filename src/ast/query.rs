@@ -2038,16 +2038,9 @@ impl fmt::Display for Join {
         }
 
         match &self.join_operator {
-            JoinOperator::Join(constraint) => write!(
-                f,
-                " {}JOIN {}{}",
-                prefix(constraint),
-                self.relation,
-                suffix(constraint)
-            ),
             JoinOperator::Inner(constraint) => write!(
                 f,
-                " {}INNER JOIN {}{}",
+                " {}JOIN {}{}",
                 prefix(constraint),
                 self.relation,
                 suffix(constraint)
@@ -2135,7 +2128,6 @@ impl fmt::Display for Join {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub enum JoinOperator {
-    Join(JoinConstraint),
     Inner(JoinConstraint),
     LeftOuter(JoinConstraint),
     RightOuter(JoinConstraint),
