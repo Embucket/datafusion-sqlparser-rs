@@ -898,8 +898,6 @@ pub enum Expr {
     /// <https://dev.mysql.com/doc/refman/8.0/en/charset-introducer.html>
     IntroducedString {
         introducer: String,
-        /// The value of the constant.
-        /// Hint: you can unwrap the string value using `value.into_string()`.
         value: Value,
     },
     /// A constant of form `<data_type> 'value'`.
@@ -907,9 +905,7 @@ pub enum Expr {
     /// as well as constants of other types (a non-standard PostgreSQL extension).
     TypedString {
         data_type: DataType,
-        /// The value of the constant.
-        /// Hint: you can unwrap the string value using `value.into_string()`.
-        value: Value,
+        value: String,
     },
     /// Scalar function call e.g. `LEFT(foo, 5)`
     Function(Function),
@@ -1626,7 +1622,7 @@ impl fmt::Display for Expr {
             Expr::IntroducedString { introducer, value } => write!(f, "{introducer} {value}"),
             Expr::TypedString { data_type, value } => {
                 write!(f, "{data_type}")?;
-                write!(f, " {value}")
+                write!(f, " '{}'", &value::escape_single_quote_string(value))
             }
             Expr::Function(fun) => write!(f, "{fun}"),
             Expr::Method(method) => write!(f, "{method}"),
