@@ -245,10 +245,6 @@ impl Dialect for PostgreSqlDialect {
     fn supports_nested_comments(&self) -> bool {
         true
     }
-
-    fn supports_string_escape_constant(&self) -> bool {
-        true
-    }
 }
 
 pub fn parse_create(parser: &mut Parser) -> Option<Result<Statement, ParserError>> {

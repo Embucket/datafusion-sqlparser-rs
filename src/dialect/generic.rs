@@ -139,8 +139,4 @@ impl Dialect for GenericDialect {
     fn supports_user_host_grantee(&self) -> bool {
         true
     }
-
-    fn supports_string_escape_constant(&self) -> bool {
-        true
-    }
 }
