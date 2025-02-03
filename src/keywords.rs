@@ -954,7 +954,6 @@ pub const RESERVED_FOR_TABLE_ALIAS: &[Keyword] = &[
     Keyword::GLOBAL,
     Keyword::ANTI,
     Keyword::SEMI,
-    Keyword::RETURNING,
     // for MSSQL-specific OUTER APPLY (seems reserved in most dialects)
     Keyword::OUTER,
     Keyword::SET,
