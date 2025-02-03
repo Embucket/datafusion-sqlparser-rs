@@ -2854,8 +2854,7 @@ impl<'a> Parser<'a> {
     fn parse_duckdb_struct_literal(&mut self) -> Result<Expr, ParserError> {
         self.expect_token(&Token::LBrace)?;
 
-        let fields =
-            self.parse_comma_separated0(Self::parse_duckdb_dictionary_field, Token::RBrace)?;
+        let fields = self.parse_comma_separated(Self::parse_duckdb_dictionary_field)?;
 
         self.expect_token(&Token::RBrace)?;
 
