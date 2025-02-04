@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use super::keywords::RESERVED_FOR_IDENTIFIER;
 #[cfg(not(feature = "std"))]
 use crate::alloc::string::ToString;
 use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
@@ -23,10 +24,9 @@ use crate::ast::helpers::stmt_data_loading::{
     StageParamsObject,
 };
 use crate::ast::{
-    ColumnOption, ColumnPolicy, ColumnPolicyProperty, Ident,
-    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
-    IdentityPropertyOrder, ObjectName, RowAccessPolicy, Statement, TagsColumnOption,
-    WrappedCollection,
+    ColumnOption, ColumnPolicy, ColumnPolicyProperty, Ident, IdentityParameters, IdentityProperty,
+    IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, ObjectName,
+    RowAccessPolicy, Statement, TagsColumnOption, WrappedCollection,
 };
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
@@ -39,7 +39,6 @@ use alloc::vec::Vec;
 #[cfg(not(feature = "std"))]
 use alloc::{format, vec};
 use sqlparser::ast::StorageSerializationPolicy;
-use super::keywords::RESERVED_FOR_IDENTIFIER;
 
 /// A [`Dialect`] for [Snowflake](https://www.snowflake.com/)
 #[derive(Debug, Default)]
@@ -259,16 +258,13 @@ impl Dialect for SnowflakeDialect {
 /// <https://docs.snowflake.com/en/sql-reference/sql/alter-session>
 fn parse_alter_session(parser: &mut Parser, set: bool) -> Result<Statement, ParserError> {
     let session_options = parse_session_options(parser, set)?;
-    Ok(
-        Statement::AlterSession {
-            set,
-            session_params: DataLoadingOptions {
-                options: session_options,
-            },
-        }
-    )
+    Ok(Statement::AlterSession {
+        set,
+        session_params: DataLoadingOptions {
+            options: session_options,
+        },
+    })
 }
-
 
 /// Parse snowflake create table statement.
 /// <https://docs.snowflake.com/en/sql-reference/sql/create-table>
@@ -860,12 +856,14 @@ fn parse_stage_params(parser: &mut Parser) -> Result<StageParamsObject, ParserEr
     })
 }
 
-
 /// Parses options separated by blank spaces, commas, or new lines like:
 /// ABORT_DETACHED_QUERY = { TRUE | FALSE }
 ///      [ ACTIVE_PYTHON_PROFILER = { 'LINE' | 'MEMORY' } ]
 ///      [ BINARY_INPUT_FORMAT = <string> ]
-fn parse_session_options(parser: &mut Parser, set: bool) -> Result<Vec<DataLoadingOption>, ParserError> {
+fn parse_session_options(
+    parser: &mut Parser,
+    set: bool,
+) -> Result<Vec<DataLoadingOption>, ParserError> {
     let mut options: Vec<DataLoadingOption> = Vec::new();
     let empty = String::new;
 
@@ -882,16 +880,14 @@ fn parse_session_options(parser: &mut Parser, set: bool) -> Result<Vec<DataLoadi
                         option_type: DataLoadingOptionType::STRING,
                         value: empty(),
                     });
-                   Ok(())
+                    Ok(())
                 }
-
-            },
+            }
             _ => parser.expected("another option", parser.peek_token()),
         }?;
     }
     Ok(options)
 }
-
 
 /// Parses options provided within parentheses like:
 /// ( ENABLE = { TRUE | FALSE }
@@ -906,9 +902,7 @@ fn parse_parentheses_options(parser: &mut Parser) -> Result<Vec<DataLoadingOptio
     loop {
         match parser.next_token().token {
             Token::RParen => break,
-            Token::Word(key) => {
-                parse_data_loading_option(parser, key, &mut options)
-            },
+            Token::Word(key) => parse_data_loading_option(parser, key, &mut options),
             _ => parser.expected("another option or ')'", parser.peek_token()),
         }?;
     }

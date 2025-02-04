@@ -3080,12 +3080,6 @@ fn test_alter_session() {
         "ALTER SESSION SET A=true \nB='tag'",
         "ALTER SESSION SET A=TRUE B='tag'",
     );
-    snowflake().one_statement_parses_to(
-        "ALTER SESSION UNSET a, b",
-        "ALTER SESSION UNSET a b",
-    );
-    snowflake().one_statement_parses_to(
-        "ALTER SESSION UNSET a\nB",
-        "ALTER SESSION UNSET a B",
-    );
+    snowflake().one_statement_parses_to("ALTER SESSION UNSET a, b", "ALTER SESSION UNSET a b");
+    snowflake().one_statement_parses_to("ALTER SESSION UNSET a\nB", "ALTER SESSION UNSET a B");
 }
