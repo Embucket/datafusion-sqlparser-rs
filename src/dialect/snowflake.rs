@@ -971,7 +971,7 @@ fn parse_session_options(parser: &mut Parser, set: bool) -> Result<Vec<DataLoadi
                     });
                    Ok(())
                 }
-                
+
             },
             _ => parser.expected("another option", parser.peek_token()),
         }?;
