@@ -3063,3 +3063,29 @@ fn parse_insert_overwrite() {
     let insert_overwrite_into = r#"INSERT OVERWRITE INTO schema.table SELECT a FROM b"#;
     snowflake().verified_stmt(insert_overwrite_into);
 }
+
+#[test]
+fn test_alter_session() {
+    snowflake().verified_stmt("ALTER SESSION SET");
+    snowflake().verified_stmt("ALTER SESSION UNSET");
+    snowflake().verified_stmt("ALTER SESSION SET AUTOCOMMIT=TRUE");
+    snowflake().verified_stmt("ALTER SESSION SET AUTOCOMMIT=FALSE QUERY_TAG='tag'");
+    snowflake().verified_stmt("ALTER SESSION UNSET AUTOCOMMIT");
+    snowflake().verified_stmt("ALTER SESSION UNSET AUTOCOMMIT QUERY_TAG");
+    snowflake().one_statement_parses_to(
+        "ALTER SESSION SET A=false, B='tag'",
+        "ALTER SESSION SET A=FALSE B='tag'",
+    );
+    snowflake().one_statement_parses_to(
+        "ALTER SESSION SET A=true \nB='tag'",
+        "ALTER SESSION SET A=TRUE B='tag'",
+    );
+    snowflake().one_statement_parses_to(
+        "ALTER SESSION UNSET a, b",
+        "ALTER SESSION UNSET a b",
+    );
+    snowflake().one_statement_parses_to(
+        "ALTER SESSION UNSET a\nB",
+        "ALTER SESSION UNSET a B",
+    );
+}
