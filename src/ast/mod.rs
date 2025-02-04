@@ -4416,7 +4416,7 @@ impl fmt::Display for Statement {
                 session_params,
             } => {
                 
-                write!( f, "ALTER SESSION {set}", set = if *set { "SET "} else { "UNSET" })?;
+                write!( f, "ALTER SESSION {set}", set = if *set { "SET"} else { "UNSET" })?;
                 if !session_params.options.is_empty() {
                     if *set {
                         write!(f, " {}", session_params)?;
@@ -4424,7 +4424,7 @@ impl fmt::Display for Statement {
                         let options = session_params
                             .options
                             .iter()
-                            .map(|p| p.option_name)
+                            .map(|p| p.option_name.clone())
                             .collect::<Vec<_>>() ;
                         write!(f, " {}", display_separated(&options, " "))?;
                     }

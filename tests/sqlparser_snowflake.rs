@@ -3152,3 +3152,29 @@ fn test_timetravel_at_before() {
     snowflake()
         .verified_only_select("SELECT * FROM tbl BEFORE(TIMESTAMP => '2024-12-15 00:00:00')");
 }
+
+#[test]
+fn test_alter_session() {
+    snowflake().verified_stmt("ALTER SESSION SET");
+    snowflake().verified_stmt("ALTER SESSION UNSET");
+    snowflake().verified_stmt("ALTER SESSION SET AUTOCOMMIT=TRUE");
+    snowflake().verified_stmt("ALTER SESSION SET AUTOCOMMIT=FALSE QUERY_TAG='tag'");
+    snowflake().verified_stmt("ALTER SESSION UNSET AUTOCOMMIT");
+    snowflake().verified_stmt("ALTER SESSION UNSET AUTOCOMMIT QUERY_TAG");
+    snowflake().one_statement_parses_to(
+        "ALTER SESSION SET A=false, B='tag'",
+        "ALTER SESSION SET A=FALSE B='tag'",
+    );
+    snowflake().one_statement_parses_to(
+        "ALTER SESSION SET A=true \nB='tag'",
+        "ALTER SESSION SET A=TRUE B='tag'",
+    );
+    snowflake().one_statement_parses_to(
+        "ALTER SESSION UNSET a, b",
+        "ALTER SESSION UNSET a b",
+    );
+    snowflake().one_statement_parses_to(
+        "ALTER SESSION UNSET a\nB",
+        "ALTER SESSION UNSET a B",
+    );
+}
