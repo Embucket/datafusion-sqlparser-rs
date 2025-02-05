@@ -2600,6 +2600,18 @@ pub enum Statement {
         on_cluster: Option<Ident>,
     },
     /// ```sql
+    /// ALTER ICEBERG TABLE
+    /// ```
+    /// Snowflake-specific statement
+    /// <https://docs.snowflake.com/en/sql-reference/sql/show-objects>
+    AlterIcebergTable {
+        /// Table name
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        name: ObjectName,
+        if_exists: bool,
+        operation: AlterTableOperation,
+    },
+    /// ```sql
     /// ALTER INDEX
     /// ```
     AlterIndex {
