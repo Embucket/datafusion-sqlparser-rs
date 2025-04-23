@@ -23,6 +23,7 @@ use alloc::{
     vec::Vec,
 };
 
+use crate::ast::Assignment;
 use core::fmt::{self, Display};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,7 @@ pub use super::ddl::{ColumnDef, TableConstraint};
 use super::{
     display_comma_separated, display_separated, ClusteredBy,
     CommentDef, Expr, FileFormat, FromTable, HiveDistributionStyle, HiveFormat, HiveIOFormat,
-    HiveRowFormat, Ident, InsertAliases, MysqlInsertPriority, ObjectName, OnCommit, OnInsert,
+    HiveRowFormat, Ident, InsertAliases, InputFormatClause, MysqlInsertPriority, ObjectName, OnCommit, OnInsert,
     OneOrManyWithParens, OrderByExpr, Query, RowAccessPolicy, SelectItem, Setting, SqlOption,
     SqliteOnConflict, StorageSerializationPolicy, TableEngine, TableObject, TableWithJoins, Tag,
     WrappedCollection,
