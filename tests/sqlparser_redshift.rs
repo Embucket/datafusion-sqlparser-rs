@@ -39,7 +39,7 @@ fn test_square_brackets_over_db_schema_table_name() {
     assert_eq!(
         select.from[0],
         TableWithJoins {
-            relation: table_from_name(ObjectName(vec![
+            relation: table_from_name(ObjectName::from(vec![
                 Ident {
                     value: "test_schema".to_string(),
                     quote_style: Some('['),
@@ -81,7 +81,7 @@ fn test_double_quotes_over_db_schema_table_name() {
     assert_eq!(
         select.from[0],
         TableWithJoins {
-            relation: table_from_name(ObjectName(vec![
+            relation: table_from_name(ObjectName::from(vec![
                 Ident {
                     value: "test_schema".to_string(),
                     quote_style: Some('"'),
@@ -115,7 +115,7 @@ fn parse_delimited_identifiers() {
             ..
         } => {
             assert_eq!(
-                ObjectName(vec![Ident::with_quote('"', "a table")]),
+                ObjectName::from(vec![Ident::with_quote('"', "a table")]),
                 name
             );
             assert_eq!(Ident::with_quote('"', "alias"), alias.unwrap().name);
@@ -136,7 +136,7 @@ fn parse_delimited_identifiers() {
     );
     assert_eq!(
         &Expr::Function(Function {
-            name: ObjectName(vec![Ident::with_quote('"', "myfun")]),
+            name: ObjectName::from(vec![Ident::with_quote('"', "myfun")]),
             uses_odbc_syntax: false,
             parameters: FunctionArguments::None,
             args: FunctionArguments::List(FunctionArgumentList {
@@ -304,7 +304,7 @@ fn test_parse_json_path_from() {
         TableFactor::Table {
             name, json_path, ..
         } => {
-            assert_eq!(name, &ObjectName(vec![Ident::new("src")]));
+            assert_eq!(name, &ObjectName::from(vec![Ident::new("src")]));
             assert_eq!(
                 json_path,
                 &Some(JsonPath {
@@ -328,7 +328,7 @@ fn test_parse_json_path_from() {
         TableFactor::Table {
             name, json_path, ..
         } => {
-            assert_eq!(name, &ObjectName(vec![Ident::new("src")]));
+            assert_eq!(name, &ObjectName::from(vec![Ident::new("src")]));
             assert_eq!(
                 json_path,
                 &Some(JsonPath {
@@ -363,7 +363,7 @@ fn test_parse_json_path_from() {
         } => {
             assert_eq!(
                 name,
-                &ObjectName(vec![Ident::new("src"), Ident::new("a"), Ident::new("b")])
+                &ObjectName::from(vec![Ident::new("src"), Ident::new("a"), Ident::new("b")])
             );
             assert_eq!(json_path, &None);
         }
