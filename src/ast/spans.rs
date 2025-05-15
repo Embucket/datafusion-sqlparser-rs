@@ -1830,6 +1830,7 @@ impl Spanned for TableFactor {
             TableFactor::Unpivot {
                 table,
                 value,
+                null_inclusion: _,
                 name,
                 columns,
                 alias,
