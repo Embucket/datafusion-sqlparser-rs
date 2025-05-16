@@ -1248,7 +1248,7 @@ pub enum TableFactor {
     ///
     /// Syntax:
     /// ```sql
-    /// table UNPIVOT [ { INCLUDE | EXCLUDE } NULLS ] (value FOR name IN (column1, [ column2, ... ])) [ alias ]
+    /// table UNPIVOT(value FOR name IN (column1, [ column2, ... ])) [ alias ]
     /// ```
     ///
     /// See <https://docs.snowflake.com/en/sql-reference/constructs/unpivot>.
@@ -1257,7 +1257,6 @@ pub enum TableFactor {
         value: Ident,
         name: Ident,
         columns: Vec<Ident>,
-        include_nulls: Option<bool>,
         alias: Option<TableAlias>,
     },
     /// A `MATCH_RECOGNIZE` operation on a table.
@@ -1894,23 +1893,15 @@ impl fmt::Display for TableFactor {
             }
             TableFactor::Unpivot {
                 table,
-                include_nulls,
                 value,
                 name,
                 columns,
                 alias,
             } => {
-                write!(f, "{table} UNPIVOT")?;
-                if let Some(include_nulls) = include_nulls {
-                    if *include_nulls {
-                        write!(f, " INCLUDE NULLS ")?;
-                    } else {
-                        write!(f, " EXCLUDE NULLS ")?;
-                    }
-                }
                 write!(
                     f,
-                    "({} FOR {} IN ({}))",
+                    "{} UNPIVOT({} FOR {} IN ({}))",
+                    table,
                     value,
                     name,
                     display_comma_separated(columns)
