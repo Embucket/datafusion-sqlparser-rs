@@ -11148,7 +11148,7 @@ impl<'a> Parser<'a> {
         } else if self.parse_keyword(Keyword::COLLATION) {
             Ok(self.parse_show_collation()?)
         } else if self.parse_keyword(Keyword::VARIABLES)
-            && dialect_of!(self is MySqlDialect | GenericDialect)
+            && dialect_of!(self is MySqlDialect | GenericDialect | SnowflakeDialect)
         {
             Ok(Statement::ShowVariables {
                 filter: self.parse_show_statement_filter()?,
