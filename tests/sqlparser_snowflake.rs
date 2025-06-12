@@ -457,8 +457,38 @@ fn test_snowflake_create_table_cluster_by() {
             assert_eq!("my_table", name.to_string());
             assert_eq!(
                 Some(WrappedCollection::Parentheses(vec![
-                    Ident::new("a"),
-                    Ident::new("b"),
+                    Expr::Identifier(Ident::new("a")),
+                    Expr::Identifier(Ident::new("b")),
+                ])),
+                cluster_by
+            )
+        }
+        _ => unreachable!(),
+    }
+    match snowflake().verified_stmt("CREATE TABLE my_table (ts DATE, a TEXT) CLUSTER BY (to_date(ts), a)") {
+        Statement::CreateTable(CreateTable {
+                                   name, cluster_by, ..
+                               }) => {
+            assert_eq!("my_table", name.to_string());
+            assert_eq!(
+                Some(WrappedCollection::Parentheses(vec![
+                    Expr::Function(Function {
+                        name: ObjectName::from(vec![Ident::new("to_date")]),
+                        uses_odbc_syntax: false,
+                        parameters: FunctionArguments::None,
+                        args: FunctionArguments::List(FunctionArgumentList {
+                            args: vec![FunctionArg::Unnamed(FunctionArgExpr::Expr(
+                                Expr::Identifier(Ident::new("ts"))
+                            ))],
+                            duplicate_treatment: None,
+                            clauses: vec![],
+                        }),
+                        filter: None,
+                        null_treatment: None,
+                        over: None,
+                        within_group: vec![],
+                    }),
+                    Expr::Identifier(Ident::new("a")),
                 ])),
                 cluster_by
             )
@@ -869,8 +899,8 @@ fn test_snowflake_create_iceberg_table_all_options() {
             assert_eq!("my_table", name.to_string());
             assert_eq!(
                 Some(WrappedCollection::Parentheses(vec![
-                    Ident::new("a"),
-                    Ident::new("b"),
+                    Expr::Identifier(Ident::new("a")),
+                    Expr::Identifier(Ident::new("b")),
                 ])),
                 cluster_by
             );
