@@ -94,7 +94,7 @@ pub struct CreateTableBuilder {
     pub primary_key: Option<Box<Expr>>,
     pub order_by: Option<OneOrManyWithParens<Expr>>,
     pub partition_by: Option<Box<Expr>>,
-    pub cluster_by: Option<WrappedCollection<Vec<Ident>>>,
+    pub cluster_by: Option<WrappedCollection<Vec<Expr>>>,
     pub clustered_by: Option<ClusteredBy>,
     pub options: Option<Vec<SqlOption>>,
     pub strict: bool,
@@ -316,7 +316,7 @@ impl CreateTableBuilder {
         self
     }
 
-    pub fn cluster_by(mut self, cluster_by: Option<WrappedCollection<Vec<Ident>>>) -> Self {
+    pub fn cluster_by(mut self, cluster_by: Option<WrappedCollection<Vec<Expr>>>) -> Self {
         self.cluster_by = cluster_by;
         self
     }
@@ -589,7 +589,7 @@ impl TryFrom<Statement> for CreateTableBuilder {
 #[derive(Default)]
 pub(crate) struct CreateTableConfiguration {
     pub partition_by: Option<Box<Expr>>,
-    pub cluster_by: Option<WrappedCollection<Vec<Ident>>>,
+    pub cluster_by: Option<WrappedCollection<Vec<Expr>>>,
     pub options: Option<Vec<SqlOption>>,
 }
 
