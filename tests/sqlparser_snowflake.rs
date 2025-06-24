@@ -465,10 +465,12 @@ fn test_snowflake_create_table_cluster_by() {
         }
         _ => unreachable!(),
     }
-    match snowflake().verified_stmt("CREATE TABLE my_table (ts DATE, a TEXT) CLUSTER BY (to_date(ts), a)") {
+    match snowflake()
+        .verified_stmt("CREATE TABLE my_table (ts DATE, a TEXT) CLUSTER BY (to_date(ts), a)")
+    {
         Statement::CreateTable(CreateTable {
-                                   name, cluster_by, ..
-                               }) => {
+            name, cluster_by, ..
+        }) => {
             assert_eq!("my_table", name.to_string());
             assert_eq!(
                 Some(WrappedCollection::Parentheses(vec![
@@ -3526,4 +3528,23 @@ fn test_alter_session() {
         "ALTER SESSION SET A=TRUE B='tag'",
     );
     snowflake().one_statement_parses_to("ALTER SESSION UNSET a\nB", "ALTER SESSION UNSET a, B");
+}
+
+#[test]
+fn test_snowflake_fetch_clause_syntax() {
+    let canonical = "SELECT c1 FROM fetch_test FETCH FIRST 2 ROWS ONLY";
+    snowflake().verified_only_select_with_canonical("SELECT c1 FROM fetch_test FETCH 2", canonical);
+
+    snowflake()
+        .verified_only_select_with_canonical("SELECT c1 FROM fetch_test FETCH FIRST 2", canonical);
+    snowflake()
+        .verified_only_select_with_canonical("SELECT c1 FROM fetch_test FETCH NEXT 2", canonical);
+
+    snowflake()
+        .verified_only_select_with_canonical("SELECT c1 FROM fetch_test FETCH 2 ROW", canonical);
+
+    snowflake().verified_only_select_with_canonical(
+        "SELECT c1 FROM fetch_test FETCH FIRST 2 ROWS",
+        canonical,
+    );
 }
