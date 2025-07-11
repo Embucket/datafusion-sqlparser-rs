@@ -24,7 +24,7 @@ use crate::ast::helpers::stmt_data_loading::{
     FileStagingCommand, StageLoadSelectItem, StageParamsObject,
 };
 use crate::ast::{
-    CatalogSyncNamespaceMode, ColumnOption, ColumnPolicy, ColumnPolicyProperty,
+    CatalogSyncNamespaceMode, ColumnOption, ColumnPolicy, ColumnPolicyProperty, ContactEntry,
     CopyIntoSnowflakeKind, Ident, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
     IdentityPropertyKind, IdentityPropertyOrder, ObjectName, RowAccessPolicy, ShowObjects,
     Statement, StorageSerializationPolicy, TagsColumnOption, WrappedCollection,
@@ -685,7 +685,7 @@ pub fn parse_create_database(
                             let purpose = p.parse_identifier()?.value;
                             p.expect_token(&Token::Eq)?;
                             let contact = p.parse_identifier()?.value;
-                            Ok((purpose, contact))
+                            Ok(ContactEntry::new(purpose, contact))
                         })?;
                         parser.expect_token(&Token::RParen)?;
                         builder = builder.with_contacts(Some(contacts));

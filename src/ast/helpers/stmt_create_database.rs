@@ -26,7 +26,7 @@ use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::ddl::CreateSnowflakeDatabase;
 use crate::ast::{
-    CatalogSyncNamespaceMode, ObjectName, Statement, StorageSerializationPolicy, Tag,
+    CatalogSyncNamespaceMode, ContactEntry, ObjectName, Statement, StorageSerializationPolicy, Tag,
 };
 use crate::parser::ParserError;
 
@@ -73,7 +73,7 @@ pub struct CreateDatabaseBuilder {
     pub catalog_sync_namespace_mode: Option<CatalogSyncNamespaceMode>,
     pub catalog_sync_namespace_flatten_delimiter: Option<String>,
     pub with_tags: Option<Vec<Tag>>,
-    pub with_contacts: Option<Vec<(String, String)>>,
+    pub with_contacts: Option<Vec<ContactEntry>>,
 }
 
 impl CreateDatabaseBuilder {
@@ -192,7 +192,7 @@ impl CreateDatabaseBuilder {
         self
     }
 
-    pub fn with_contacts(mut self, with_contacts: Option<Vec<(String, String)>>) -> Self {
+    pub fn with_contacts(mut self, with_contacts: Option<Vec<ContactEntry>>) -> Self {
         self.with_contacts = with_contacts;
         self
     }
