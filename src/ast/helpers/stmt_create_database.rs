@@ -51,15 +51,14 @@ use crate::parser::ParserError;
 /// )
 /// ```
 ///
-/// [1]: crate::ast::Statement::CreateSnowflakeDatabase
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateDatabaseBuilder {
+    pub name: ObjectName,
     pub or_replace: bool,
     pub transient: bool,
     pub if_not_exists: bool,
-    pub name: ObjectName,
     pub clone: Option<ObjectName>,
     pub data_retention_time_in_days: Option<u64>,
     pub max_data_extension_time_in_days: Option<u64>,
@@ -79,10 +78,10 @@ pub struct CreateDatabaseBuilder {
 impl CreateDatabaseBuilder {
     pub fn new(name: ObjectName) -> Self {
         Self {
+            name,
             or_replace: false,
             transient: false,
             if_not_exists: false,
-            name,
             clone: None,
             data_retention_time_in_days: None,
             max_data_extension_time_in_days: None,
@@ -275,7 +274,6 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
 #[cfg(test)]
 mod tests {
     use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
-    use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
     use crate::ast::{Ident, ObjectName, Statement};
     use crate::parser::ParserError;
 

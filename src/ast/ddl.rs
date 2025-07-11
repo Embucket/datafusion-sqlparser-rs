@@ -2277,10 +2277,10 @@ impl fmt::Display for CreateConnector {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct CreateSnowflakeDatabase {
+    pub name: ObjectName,
     pub or_replace: bool,
     pub transient: bool,
     pub if_not_exists: bool,
-    pub name: ObjectName,
     pub clone: Option<ObjectName>,
     pub data_retention_time_in_days: Option<u64>,
     pub max_data_extension_time_in_days: Option<u64>,
