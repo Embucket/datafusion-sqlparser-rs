@@ -904,9 +904,7 @@ fn parse_alter_table_owner_to() {
     for case in test_cases {
         match pg_and_generic().verified_stmt(case.sql) {
             Statement::AlterTable {
-                name,
-                operations,
-                ..
+                name, operations, ..
             } => {
                 assert_eq!(name.to_string(), "tab");
                 assert_eq!(

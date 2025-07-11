@@ -18,6 +18,7 @@
 #[cfg(not(feature = "std"))]
 use crate::alloc::string::ToString;
 use crate::ast::helpers::key_value_options::{KeyValueOption, KeyValueOptionType, KeyValueOptions};
+use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
 use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
 use crate::ast::helpers::stmt_data_loading::{
     FileStagingCommand, StageLoadSelectItem, StageParamsObject,
@@ -26,7 +27,7 @@ use crate::ast::{
     CatalogSyncNamespaceMode, ColumnOption, ColumnPolicy, ColumnPolicyProperty,
     CopyIntoSnowflakeKind, Ident, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
     IdentityPropertyKind, IdentityPropertyOrder, ObjectName, RowAccessPolicy, ShowObjects,
-    Statement, TagsColumnOption, WrappedCollection,
+    Statement, StorageSerializationPolicy, TagsColumnOption, WrappedCollection,
 };
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
@@ -42,8 +43,6 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use super::keywords::RESERVED_FOR_IDENTIFIER;
-use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
-use sqlparser::ast::StorageSerializationPolicy;
 
 /// A [`Dialect`] for [Snowflake](https://www.snowflake.com/)
 #[derive(Debug, Default)]

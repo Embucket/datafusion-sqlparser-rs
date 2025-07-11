@@ -51,12 +51,12 @@ pub use self::ddl::{
     AlterTableAlgorithm, AlterTableOperation, AlterType, AlterTypeAddValue,
     AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename, AlterTypeRenameValue,
     ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnPolicy, ColumnPolicyProperty,
-    ConstraintCharacteristics, CreateConnector, CreateFunction, Deduplicate, DeferrableInitial,
-    DropBehavior, GeneratedAs, GeneratedExpressionMode, IdentityParameters, IdentityProperty,
-    IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, IndexOption,
-    IndexType, KeyOrIndexDisplay, NullsDistinctOption, Owner, Partition, ProcedureParam,
-    ReferentialAction, TableConstraint, TagsColumnOption, UserDefinedTypeCompositeAttributeDef,
-    UserDefinedTypeRepresentation, ViewColumnDef,
+    ConstraintCharacteristics, CreateConnector, CreateFunction, CreateSnowflakeDatabase,
+    Deduplicate, DeferrableInitial, DropBehavior, GeneratedAs, GeneratedExpressionMode,
+    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
+    IdentityPropertyOrder, IndexOption, IndexType, KeyOrIndexDisplay, NullsDistinctOption, Owner,
+    Partition, ProcedureParam, ReferentialAction, TableConstraint, TagsColumnOption,
+    UserDefinedTypeCompositeAttributeDef, UserDefinedTypeRepresentation, ViewColumnDef,
 };
 pub use self::dml::{CreateIndex, CreateTable, Delete, Insert};
 pub use self::operator::{BinaryOperator, UnaryOperator};
@@ -104,7 +104,6 @@ pub mod helpers;
 mod operator;
 mod query;
 mod spans;
-use crate::ast::ddl::CreateSnowflakeDatabase;
 pub use spans::Spanned;
 
 mod trigger;
@@ -3157,7 +3156,9 @@ pub enum Statement {
         schema_name: SchemaName,
         if_not_exists: bool,
     },
+    /// ```sql
     /// CREATE DATABASE
+    /// ```
     CreateDatabase {
         db_name: ObjectName,
         if_not_exists: bool,
