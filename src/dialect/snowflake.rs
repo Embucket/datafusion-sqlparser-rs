@@ -22,7 +22,12 @@ use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
 use crate::ast::helpers::stmt_data_loading::{
     FileStagingCommand, StageLoadSelectItem, StageParamsObject,
 };
-use crate::ast::{CatalogSyncNamespaceMode, ColumnOption, ColumnPolicy, ColumnPolicyProperty, CopyIntoSnowflakeKind, Ident, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, ObjectName, RowAccessPolicy, ShowObjects, Statement, TagsColumnOption, WrappedCollection};
+use crate::ast::{
+    CatalogSyncNamespaceMode, ColumnOption, ColumnPolicy, ColumnPolicyProperty,
+    CopyIntoSnowflakeKind, Ident, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
+    IdentityPropertyKind, IdentityPropertyOrder, ObjectName, RowAccessPolicy, ShowObjects,
+    Statement, TagsColumnOption, WrappedCollection,
+};
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
 use crate::parser::{Parser, ParserError};
@@ -37,8 +42,8 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 
 use super::keywords::RESERVED_FOR_IDENTIFIER;
-use sqlparser::ast::StorageSerializationPolicy;
 use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
+use sqlparser::ast::StorageSerializationPolicy;
 
 /// A [`Dialect`] for [Snowflake](https://www.snowflake.com/)
 #[derive(Debug, Default)]
@@ -613,11 +618,13 @@ pub fn parse_create_database(
                 }
                 Keyword::DATA_RETENTION_TIME_IN_DAYS => {
                     parser.expect_token(&Token::Eq)?;
-                    builder = builder.data_retention_time_in_days(Some(parser.parse_literal_uint()?));
+                    builder =
+                        builder.data_retention_time_in_days(Some(parser.parse_literal_uint()?));
                 }
                 Keyword::MAX_DATA_EXTENSION_TIME_IN_DAYS => {
                     parser.expect_token(&Token::Eq)?;
-                    builder = builder.max_data_extension_time_in_days(Some(parser.parse_literal_uint()?));
+                    builder =
+                        builder.max_data_extension_time_in_days(Some(parser.parse_literal_uint()?));
                 }
                 Keyword::EXTERNAL_VOLUME => {
                     parser.expect_token(&Token::Eq)?;
@@ -629,7 +636,8 @@ pub fn parse_create_database(
                 }
                 Keyword::REPLACE_INVALID_CHARACTERS => {
                     parser.expect_token(&Token::Eq)?;
-                    builder = builder.replace_invalid_characters(Some(parser.parse_boolean_string()?));
+                    builder =
+                        builder.replace_invalid_characters(Some(parser.parse_boolean_string()?));
                 }
                 Keyword::DEFAULT_DDL_COLLATION => {
                     parser.expect_token(&Token::Eq)?;
@@ -650,13 +658,15 @@ pub fn parse_create_database(
                 }
                 Keyword::CATALOG_SYNC_NAMESPACE_FLATTEN_DELIMITER => {
                     parser.expect_token(&Token::Eq)?;
-                    builder = builder.catalog_sync_namespace_flatten_delimiter(Some(parser.parse_literal_string()?));
+                    builder = builder.catalog_sync_namespace_flatten_delimiter(Some(
+                        parser.parse_literal_string()?,
+                    ));
                 }
                 Keyword::CATALOG_SYNC_NAMESPACE_MODE => {
                     parser.expect_token(&Token::Eq)?;
                     let mode =
                         match parser.parse_one_of_keywords(&[Keyword::NEST, Keyword::FLATTEN]) {
-                            Some(Keyword::NEST) =>  CatalogSyncNamespaceMode::Nest,
+                            Some(Keyword::NEST) => CatalogSyncNamespaceMode::Nest,
                             Some(Keyword::FLATTEN) => CatalogSyncNamespaceMode::Flatten,
                             _ => {
                                 return parser.expected("NEST or FLATTEN", next_token);
@@ -692,7 +702,6 @@ pub fn parse_create_database(
     }
     Ok(builder.build())
 }
-
 
 pub fn parse_storage_serialization_policy(
     parser: &mut Parser,
@@ -1139,12 +1148,15 @@ fn parse_session_options(
             }
         }
     }
-    if options
-        .is_empty() { {
+    if options.is_empty() {
+        {
             Err(ParserError::ParserError(
                 "expected at least one option".to_string(),
             ))
-        } } else { Ok(options) }
+        }
+    } else {
+        Ok(options)
+    }
 }
 
 /// Parses options provided within parentheses like:

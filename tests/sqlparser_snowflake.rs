@@ -3590,7 +3590,7 @@ fn test_create_database_with_all_options() {
         STORAGE_SERIALIZATION_POLICY = COMPATIBLE COMMENT = 'This is my database' \
         CATALOG_SYNC = 'sync_integration' CATALOG_SYNC_NAMESPACE_FLATTEN_DELIMITER = '/' \
         WITH TAG (env='prod', team='data') \
-        WITH CONTACT (owner = admin, dpo = compliance)"
+        WITH CONTACT (owner = admin, dpo = compliance)",
     );
 }
 
@@ -3600,17 +3600,11 @@ fn test_create_database_errors() {
         .parse_sql_statements("CREATE DATABASE")
         .unwrap_err()
         .to_string();
-    assert!(
-        err.contains("Expected"),
-        "Unexpected error: {err}"
-    );
+    assert!(err.contains("Expected"), "Unexpected error: {err}");
 
     let err = snowflake()
         .parse_sql_statements("CREATE DATABASE my_db CLONE")
         .unwrap_err()
         .to_string();
-    assert!(
-        err.contains("Expected"),
-        "Unexpected error: {err}"
-    );
+    assert!(err.contains("Expected"), "Unexpected error: {err}");
 }

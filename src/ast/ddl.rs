@@ -29,7 +29,13 @@ use serde::{Deserialize, Serialize};
 use sqlparser_derive::{Visit, VisitMut};
 
 use crate::ast::value::escape_single_quote_string;
-use crate::ast::{display_comma_separated, display_separated, CatalogSyncNamespaceMode, CommentDef, CreateFunctionBody, CreateFunctionUsing, DataType, Expr, FunctionBehavior, FunctionCalledOnNull, FunctionDeterminismSpecifier, FunctionParallel, Ident, MySQLColumnPosition, ObjectName, OperateFunctionArg, OrderByExpr, ProjectionSelect, SequenceOptions, SqlOption, StorageSerializationPolicy, Tag, Value, ValueWithSpan};
+use crate::ast::{
+    display_comma_separated, display_separated, CatalogSyncNamespaceMode, CommentDef,
+    CreateFunctionBody, CreateFunctionUsing, DataType, Expr, FunctionBehavior,
+    FunctionCalledOnNull, FunctionDeterminismSpecifier, FunctionParallel, Ident,
+    MySQLColumnPosition, ObjectName, OperateFunctionArg, OrderByExpr, ProjectionSelect,
+    SequenceOptions, SqlOption, StorageSerializationPolicy, Tag, Value, ValueWithSpan,
+};
 use crate::keywords::Keyword;
 use crate::tokenizer::Token;
 
@@ -2298,7 +2304,11 @@ impl fmt::Display for CreateSnowflakeDatabase {
             "CREATE {or_replace}{transient}DATABASE {if_not_exists}{name}",
             or_replace = if self.or_replace { "OR REPLACE " } else { "" },
             transient = if self.transient { "TRANSIENT " } else { "" },
-            if_not_exists = if self.if_not_exists { "IF NOT EXISTS " } else { "" },
+            if_not_exists = if self.if_not_exists {
+                "IF NOT EXISTS "
+            } else {
+                ""
+            },
             name = self.name,
         )?;
 

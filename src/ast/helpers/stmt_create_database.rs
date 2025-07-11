@@ -272,12 +272,11 @@ impl TryFrom<Statement> for CreateDatabaseBuilder {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
+    use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
     use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
     use crate::ast::{Ident, ObjectName, Statement};
-    use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
     use crate::parser::ParserError;
 
     #[test]

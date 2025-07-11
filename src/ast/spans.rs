@@ -15,10 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::ast::query::SelectItemQualifiedWildcardKind;
-use core::iter;
 use crate::ast::ddl::CreateSnowflakeDatabase;
+use crate::ast::query::SelectItemQualifiedWildcardKind;
 use crate::tokenizer::Span;
+use core::iter;
 
 use super::{
     dcl::SecondaryRoles, value::ValueWithSpan, AccessExpr, AlterColumnOperation,
@@ -604,10 +604,7 @@ impl Spanned for CreateTable {
 
 impl Spanned for CreateSnowflakeDatabase {
     fn span(&self) -> Span {
-        union_spans(
-            core::iter::once(self.name.span())
-                .chain(self.clone.iter().map(|c| c.span()))
-        )
+        union_spans(core::iter::once(self.name.span()).chain(self.clone.iter().map(|c| c.span())))
     }
 }
 
