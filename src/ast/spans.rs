@@ -17,7 +17,7 @@
 
 use crate::ast::query::SelectItemQualifiedWildcardKind;
 use core::iter;
-
+use crate::ast::ddl::CreateSnowflakeDatabase;
 use crate::tokenizer::Span;
 
 use super::{
@@ -366,6 +366,7 @@ impl Spanned for Statement {
                     .chain(returning.iter().flat_map(|i| i.iter().map(|k| k.span()))),
             ),
             Statement::Delete(delete) => delete.span(),
+            Statement::CreateSnowflakeDatabase(create_database) => create_database.span(),
             Statement::CreateView {
                 or_replace: _,
                 materialized: _,
@@ -597,6 +598,15 @@ impl Spanned for CreateTable {
                 .chain(query.iter().map(|i| i.span()))
                 .chain(like.iter().map(|i| i.span()))
                 .chain(clone.iter().map(|i| i.span())),
+        )
+    }
+}
+
+impl Spanned for CreateSnowflakeDatabase {
+    fn span(&self) -> Span {
+        union_spans(
+            core::iter::once(self.name.span())
+                .chain(self.clone.iter().map(|c| c.span()))
         )
     }
 }

@@ -905,8 +905,6 @@ fn parse_alter_table_owner_to() {
         match pg_and_generic().verified_stmt(case.sql) {
             Statement::AlterTable {
                 name,
-                if_exists: _,
-                only: _,
                 operations,
                 ..
             } => {

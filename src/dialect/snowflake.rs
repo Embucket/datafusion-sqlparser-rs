@@ -22,12 +22,7 @@ use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
 use crate::ast::helpers::stmt_data_loading::{
     FileStagingCommand, StageLoadSelectItem, StageParamsObject,
 };
-use crate::ast::{
-    ColumnOption, ColumnPolicy, ColumnPolicyProperty, CopyIntoSnowflakeKind, Ident,
-    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
-    IdentityPropertyOrder, ObjectName, RowAccessPolicy, ShowObjects, Statement, TagsColumnOption,
-    WrappedCollection,
-};
+use crate::ast::{CatalogSyncNamespaceMode, ColumnOption, ColumnPolicy, ColumnPolicyProperty, CopyIntoSnowflakeKind, Ident, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, ObjectName, RowAccessPolicy, ShowObjects, Statement, TagsColumnOption, WrappedCollection};
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
 use crate::parser::{Parser, ParserError};
@@ -43,6 +38,7 @@ use alloc::{format, vec};
 
 use super::keywords::RESERVED_FOR_IDENTIFIER;
 use sqlparser::ast::StorageSerializationPolicy;
+use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
 
 /// A [`Dialect`] for [Snowflake](https://www.snowflake.com/)
 #[derive(Debug, Default)]
@@ -177,6 +173,8 @@ impl Dialect for SnowflakeDialect {
                 return Some(parse_create_table(
                     or_replace, global, temporary, volatile, transient, iceberg, parser,
                 ));
+            } else if parser.parse_keyword(Keyword::DATABASE) {
+                return Some(parse_create_database(or_replace, transient, parser));
             } else {
                 // need to go back with the cursor
                 let mut back = 1;
@@ -592,6 +590,109 @@ pub fn parse_create_table(
 
     Ok(builder.build())
 }
+
+pub fn parse_create_database(
+    or_replace: bool,
+    transient: bool,
+    parser: &mut Parser,
+) -> Result<Statement, ParserError> {
+    let if_not_exists = parser.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+    let name = parser.parse_object_name(false)?;
+
+    let mut builder = CreateDatabaseBuilder::new(name)
+        .or_replace(or_replace)
+        .transient(transient)
+        .if_not_exists(if_not_exists);
+
+    loop {
+        let next_token = parser.next_token();
+        match &next_token.token {
+            Token::Word(word) => match word.keyword {
+                Keyword::CLONE => {
+                    builder = builder.clone_clause(Some(parser.parse_object_name(false)?));
+                }
+                Keyword::DATA_RETENTION_TIME_IN_DAYS => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder = builder.data_retention_time_in_days(Some(parser.parse_literal_uint()?));
+                }
+                Keyword::MAX_DATA_EXTENSION_TIME_IN_DAYS => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder = builder.max_data_extension_time_in_days(Some(parser.parse_literal_uint()?));
+                }
+                Keyword::EXTERNAL_VOLUME => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder = builder.external_volume(Some(parser.parse_literal_string()?));
+                }
+                Keyword::CATALOG => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder = builder.catalog(Some(parser.parse_literal_string()?));
+                }
+                Keyword::REPLACE_INVALID_CHARACTERS => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder = builder.replace_invalid_characters(Some(parser.parse_boolean_string()?));
+                }
+                Keyword::DEFAULT_DDL_COLLATION => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder = builder.default_ddl_collation(Some(parser.parse_literal_string()?));
+                }
+                Keyword::STORAGE_SERIALIZATION_POLICY => {
+                    parser.expect_token(&Token::Eq)?;
+                    let policy = parse_storage_serialization_policy(parser)?;
+                    builder = builder.storage_serialization_policy(Some(policy));
+                }
+                Keyword::COMMENT => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder = builder.comment(Some(parser.parse_literal_string()?));
+                }
+                Keyword::CATALOG_SYNC => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder = builder.catalog_sync(Some(parser.parse_literal_string()?));
+                }
+                Keyword::CATALOG_SYNC_NAMESPACE_FLATTEN_DELIMITER => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder = builder.catalog_sync_namespace_flatten_delimiter(Some(parser.parse_literal_string()?));
+                }
+                Keyword::CATALOG_SYNC_NAMESPACE_MODE => {
+                    parser.expect_token(&Token::Eq)?;
+                    let mode =
+                        match parser.parse_one_of_keywords(&[Keyword::NEST, Keyword::FLATTEN]) {
+                            Some(Keyword::NEST) =>  CatalogSyncNamespaceMode::Nest,
+                            Some(Keyword::FLATTEN) => CatalogSyncNamespaceMode::Flatten,
+                            _ => {
+                                return parser.expected("NEST or FLATTEN", next_token);
+                            }
+                        };
+                    builder = builder.catalog_sync_namespace_mode(Some(mode));
+                }
+                Keyword::WITH => {
+                    if parser.parse_keyword(Keyword::TAG) {
+                        parser.expect_token(&Token::LParen)?;
+                        let tags = parser.parse_comma_separated(Parser::parse_tag)?;
+                        parser.expect_token(&Token::RParen)?;
+                        builder = builder.with_tags(Some(tags));
+                    } else if parser.parse_keyword(Keyword::CONTACT) {
+                        parser.expect_token(&Token::LParen)?;
+                        let contacts = parser.parse_comma_separated(|p| {
+                            let purpose = p.parse_identifier()?.value;
+                            p.expect_token(&Token::Eq)?;
+                            let contact = p.parse_identifier()?.value;
+                            Ok((purpose, contact))
+                        })?;
+                        parser.expect_token(&Token::RParen)?;
+                        builder = builder.with_contacts(Some(contacts));
+                    } else {
+                        return parser.expected("TAG or CONTACT", next_token);
+                    }
+                }
+                _ => return parser.expected("end of statementrrr", next_token),
+            },
+            Token::SemiColon | Token::EOF => break,
+            _ => return parser.expected("end of statement", next_token),
+        }
+    }
+    Ok(builder.build())
+}
+
 
 pub fn parse_storage_serialization_policy(
     parser: &mut Parser,
@@ -1038,14 +1139,12 @@ fn parse_session_options(
             }
         }
     }
-    options
-        .is_empty()
-        .then(|| {
+    if options
+        .is_empty() { {
             Err(ParserError::ParserError(
                 "expected at least one option".to_string(),
             ))
-        })
-        .unwrap_or(Ok(options))
+        } } else { Ok(options) }
 }
 
 /// Parses options provided within parentheses like:
