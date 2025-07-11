@@ -8793,13 +8793,6 @@ impl<'a> Parser<'a> {
 
     /// Parse a literal string
     pub fn parse_literal_string(&mut self) -> Result<String, ParserError> {
-        let tokens = self
-            .tokens
-            .clone()
-            .iter()
-            .map(|t| t.to_string())
-            .collect::<Vec<_>>()
-            .join(" ");
         let next_token = self.next_token();
         match next_token.token {
             Token::Word(Word {
@@ -8813,7 +8806,7 @@ impl<'a> Parser<'a> {
                 Ok(s)
             }
             Token::UnicodeStringLiteral(s) => Ok(s),
-            _ => self.expected(&format!("literal string {tokens}"), next_token),
+            _ => self.expected("literal string", next_token),
         }
     }
 
