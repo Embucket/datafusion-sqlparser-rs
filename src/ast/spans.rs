@@ -16,9 +16,8 @@
 // under the License.
 
 use crate::ast::query::SelectItemQualifiedWildcardKind;
-use core::iter;
-
 use crate::tokenizer::Span;
+use core::iter;
 
 use super::{
     dcl::SecondaryRoles, value::ValueWithSpan, AccessExpr, AlterColumnOperation,
