@@ -179,12 +179,8 @@ impl Dialect for SnowflakeDialect {
                 ));
             } else if parser.parse_keyword(Keyword::DATABASE) {
                 return Some(parse_create_database(or_replace, transient, parser));
-            } else if parser.parse_keyword(Keyword::EXTERNAL) {
-                if parser.parse_keyword(Keyword::VOLUME) {
-                    return Some(parse_create_external_volume(or_replace, parser));
-                } else {
-                    parser.prev_token();
-                }
+            } else if parser.parse_keywords(&[Keyword::EXTERNAL, Keyword::VOLUME]) {
+                return Some(parse_create_external_volume(or_replace, parser));
             } else {
                 // need to go back with the cursor
                 let mut back = 1;
