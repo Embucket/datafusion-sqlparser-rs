@@ -4212,7 +4212,7 @@ impl fmt::Display for Statement {
                     write!(f, " ALLOW_WRITES = TRUE")?;
                 }
                 if let Some(c) = comment {
-                    write!(f, " COMMENT = '{}'", c.replace('\'', "''"))?;
+                    write!(f, " COMMENT = '{c}'")?;
                 }
                 Ok(())
             }
