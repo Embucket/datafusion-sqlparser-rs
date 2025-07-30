@@ -651,17 +651,17 @@ pub enum Expr {
     /// such as maps, arrays, and lists:
     /// - Array
     ///     - A 1-dim array `a[1]` will be represented like:
-    ///         `CompoundFieldAccess(Ident('a'), vec![Subscript(1)]`
+    ///       `CompoundFieldAccess(Ident('a'), vec![Subscript(1)]`
     ///     - A 2-dim array `a[1][2]` will be represented like:
-    ///         `CompoundFieldAccess(Ident('a'), vec![Subscript(1), Subscript(2)]`
+    ///       `CompoundFieldAccess(Ident('a'), vec![Subscript(1), Subscript(2)]`
     /// - Map or Struct (Bracket-style)
     ///     - A map `a['field1']` will be represented like:
-    ///         `CompoundFieldAccess(Ident('a'), vec![Subscript('field')]`
+    ///       `CompoundFieldAccess(Ident('a'), vec![Subscript('field')]`
     ///     - A 2-dim map `a['field1']['field2']` will be represented like:
-    ///         `CompoundFieldAccess(Ident('a'), vec![Subscript('field1'), Subscript('field2')]`
+    ///       `CompoundFieldAccess(Ident('a'), vec![Subscript('field1'), Subscript('field2')]`
     /// - Struct (Dot-style) (only effect when the chain contains both subscript and expr)
     ///     - A struct access `a[field1].field2` will be represented like:
-    ///         `CompoundFieldAccess(Ident('a'), vec![Subscript('field1'), Ident('field2')]`
+    ///       `CompoundFieldAccess(Ident('a'), vec![Subscript('field1'), Ident('field2')]`
     /// - If a struct access likes `a.field1.field2`, it will be represented by CompoundIdentifier([a, field1, field2])
     CompoundFieldAccess {
         root: Box<Expr>,
@@ -3283,6 +3283,18 @@ pub enum Statement {
         option: Option<ReferentialAction>,
     },
     /// ```sql
+    /// CREATE EXTERNAL VOLUME
+    /// ```
+    /// See <https://docs.snowflake.com/en/sql-reference/sql/create-external-volume>
+    CreateExternalVolume {
+        or_replace: bool,
+        if_not_exists: bool,
+        name: ObjectName,
+        storage_locations: Vec<CloudProviderParams>,
+        allow_writes: Option<bool>,
+        comment: Option<String>,
+    },
+    /// ```sql
     /// CREATE PROCEDURE
     /// ```
     CreateProcedure {
@@ -4168,6 +4180,39 @@ impl fmt::Display for Statement {
                 };
                 if let Some(option) = option {
                     write!(f, " {option}")?;
+                }
+                Ok(())
+            }
+            Statement::CreateExternalVolume {
+                or_replace,
+                if_not_exists,
+                name,
+                storage_locations,
+                allow_writes,
+                comment,
+            } => {
+                write!(
+                    f,
+                    "CREATE {or_replace}EXTERNAL VOLUME {if_not_exists}{name}",
+                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
+                    if_not_exists = if *if_not_exists { " IF NOT EXISTS" } else { "" },
+                )?;
+                if !storage_locations.is_empty() {
+                    write!(
+                        f,
+                        " STORAGE_LOCATIONS = ({})",
+                        storage_locations
+                            .iter()
+                            .map(|loc| format!("({})", loc))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )?;
+                }
+                if let Some(true) = allow_writes {
+                    write!(f, " ALLOW_WRITES = TRUE")?;
+                }
+                if let Some(c) = comment {
+                    write!(f, " COMMENT = '{c}'")?;
                 }
                 Ok(())
             }
@@ -7314,7 +7359,7 @@ impl fmt::Display for CopyTarget {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use CopyTarget::*;
         match self {
-            Stdin { .. } => write!(f, "STDIN"),
+            Stdin => write!(f, "STDIN"),
             Stdout => write!(f, "STDOUT"),
             File { filename } => write!(f, "'{}'", value::escape_single_quote_string(filename)),
             Program { command } => write!(
@@ -8868,6 +8913,74 @@ impl fmt::Display for NullInclusion {
             NullInclusion::IncludeNulls => write!(f, "INCLUDE NULLS"),
             NullInclusion::ExcludeNulls => write!(f, "EXCLUDE NULLS"),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CloudProviderParams {
+    pub name: String,
+    pub provider: String,
+    pub base_url: Option<String>,
+    pub aws_role_arn: Option<String>,
+    pub aws_access_point_arn: Option<String>,
+    pub aws_external_id: Option<String>,
+    pub azure_tenant_id: Option<String>,
+    pub storage_endpoint: Option<String>,
+    pub use_private_link_endpoint: Option<bool>,
+    pub encryption: KeyValueOptions,
+    pub credentials: KeyValueOptions,
+}
+
+impl fmt::Display for CloudProviderParams {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "NAME = '{}' STORAGE_PROVIDER = '{}'",
+            self.name, self.provider
+        )?;
+
+        if let Some(base_url) = &self.base_url {
+            write!(f, " STORAGE_BASE_URL = '{base_url}'")?;
+        }
+
+        if let Some(arn) = &self.aws_role_arn {
+            write!(f, " STORAGE_AWS_ROLE_ARN = '{arn}'")?;
+        }
+
+        if let Some(ap_arn) = &self.aws_access_point_arn {
+            write!(f, " STORAGE_AWS_ACCESS_POINT_ARN = '{ap_arn}'")?;
+        }
+
+        if let Some(ext_id) = &self.aws_external_id {
+            write!(f, " STORAGE_AWS_EXTERNAL_ID = '{ext_id}'")?;
+        }
+
+        if let Some(tenant_id) = &self.azure_tenant_id {
+            write!(f, " AZURE_TENANT_ID = '{tenant_id}'")?;
+        }
+
+        if let Some(endpoint) = &self.storage_endpoint {
+            write!(f, " STORAGE_ENDPOINT = '{endpoint}'")?;
+        }
+
+        if let Some(use_pl) = self.use_private_link_endpoint {
+            write!(
+                f,
+                " USE_PRIVATELINK_ENDPOINT = {}",
+                if use_pl { "TRUE" } else { "FALSE" }
+            )?;
+        }
+
+        if !self.encryption.options.is_empty() {
+            write!(f, " ENCRYPTION=({})", self.encryption)?;
+        }
+
+        if !self.credentials.options.is_empty() {
+            write!(f, " CREDENTIALS=({})", self.credentials)?;
+        }
+        Ok(())
     }
 }
 

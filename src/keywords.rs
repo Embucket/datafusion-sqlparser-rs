@@ -18,14 +18,14 @@
 //! This module defines
 //! 1) a list of constants for every keyword
 //! 2) an `ALL_KEYWORDS` array with every keyword in it
-//!     This is not a list of *reserved* keywords: some of these can be
-//!     parsed as identifiers if the parser decides so. This means that
-//!     new keywords can be added here without affecting the parse result.
+//!    This is not a list of *reserved* keywords: some of these can be
+//!    parsed as identifiers if the parser decides so. This means that
+//!    new keywords can be added here without affecting the parse result.
 //!
 //!     As a matter of fact, most of these keywords are not used at all
-//!     and could be removed.
+//!    and could be removed.
 //! 3) a `RESERVED_FOR_TABLE_ALIAS` array with keywords reserved in a
-//!     "table alias" context.
+//!    "table alias" context.
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -89,6 +89,7 @@ define_keywords!(
     ALIAS,
     ALL,
     ALLOCATE,
+    ALLOW_WRITES,
     ALTER,
     ALWAYS,
     ANALYZE,
@@ -119,6 +120,7 @@ define_keywords!(
     AUTO_INCREMENT,
     AVG,
     AVRO,
+    AZURE_TENANT_ID,
     BACKWARD,
     BASE64,
     BASE_LOCATION,
@@ -829,7 +831,14 @@ define_keywords!(
     STDIN,
     STDOUT,
     STEP,
+    STORAGE_AWS_ACCESS_POINT_ARN,
+    STORAGE_AWS_EXTERNAL_ID,
+    STORAGE_AWS_ROLE_ARN,
+    STORAGE_BASE_URL,
+    STORAGE_ENDPOINT,
     STORAGE_INTEGRATION,
+    STORAGE_LOCATIONS,
+    STORAGE_PROVIDER,
     STORAGE_SERIALIZATION_POLICY,
     STORED,
     STRICT,
@@ -932,6 +941,7 @@ define_keywords!(
     USE,
     USER,
     USER_RESOURCES,
+    USE_PRIVATELINK_ENDPOINT,
     USING,
     UUID,
     VACUUM,

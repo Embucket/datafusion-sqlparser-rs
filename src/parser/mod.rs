@@ -4385,7 +4385,7 @@ impl<'a> Parser<'a> {
             self.parse_create_view(or_replace, temporary, create_view_params)
         } else if self.parse_keyword(Keyword::POLICY) {
             self.parse_create_policy()
-        } else if self.parse_keyword(Keyword::EXTERNAL) {
+        } else if self.parse_keywords(&[Keyword::EXTERNAL, Keyword::TABLE]) {
             self.parse_create_external_table(or_replace)
         } else if self.parse_keyword(Keyword::FUNCTION) {
             self.parse_create_function(or_replace, temporary)
@@ -5226,7 +5226,6 @@ impl<'a> Parser<'a> {
         &mut self,
         or_replace: bool,
     ) -> Result<Statement, ParserError> {
-        self.expect_keyword_is(Keyword::TABLE)?;
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parse_object_name(false)?;
         let (columns, constraints) = self.parse_columns()?;
