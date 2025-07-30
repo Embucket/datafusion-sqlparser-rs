@@ -4436,6 +4436,24 @@ pub enum Statement {
     /// DROP TRIGGER statement. See struct [DropTrigger] for details.
     DropTrigger(DropTrigger),
     /// ```sql
+    /// CREATE EXTERNAL VOLUME
+    /// ```
+    /// See <https://docs.snowflake.com/en/sql-reference/sql/create-external-volume>
+    CreateExternalVolume {
+        /// Whether `OR REPLACE` was specified.
+        or_replace: bool,
+        /// Whether `IF NOT EXISTS` was specified.
+        if_not_exists: bool,
+        /// The name of the external volume.
+        name: ObjectName,
+        /// Cloud storage location configurations.
+        storage_locations: Vec<CloudProviderParams>,
+        /// Whether writes are allowed to the external volume.
+        allow_writes: Option<bool>,
+        /// Optional comment for the external volume.
+        comment: Option<String>,
+    },
+    /// ```sql
     /// CREATE PROCEDURE
     /// ```
     CreateProcedure {
@@ -5394,6 +5412,39 @@ impl fmt::Display for Statement {
             Statement::CreateDomain(create_domain) => create_domain.fmt(f),
             Statement::CreateTrigger(create_trigger) => create_trigger.fmt(f),
             Statement::DropTrigger(drop_trigger) => drop_trigger.fmt(f),
+            Statement::CreateExternalVolume {
+                or_replace,
+                if_not_exists,
+                name,
+                storage_locations,
+                allow_writes,
+                comment,
+            } => {
+                write!(
+                    f,
+                    "CREATE {or_replace}EXTERNAL VOLUME {if_not_exists}{name}",
+                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
+                    if_not_exists = if *if_not_exists { " IF NOT EXISTS" } else { "" },
+                )?;
+                if !storage_locations.is_empty() {
+                    write!(
+                        f,
+                        " STORAGE_LOCATIONS = ({})",
+                        storage_locations
+                            .iter()
+                            .map(|loc| format!("({})", loc))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )?;
+                }
+                if let Some(true) = allow_writes {
+                    write!(f, " ALLOW_WRITES = TRUE")?;
+                }
+                if let Some(c) = comment {
+                    write!(f, " COMMENT = '{c}'")?;
+                }
+                Ok(())
+            }
             Statement::CreateProcedure {
                 name,
                 or_alter,
@@ -11943,6 +11994,88 @@ impl fmt::Display for VacuumStatement {
         }
         if self.boost {
             write!(f, " BOOST")?;
+        }
+        Ok(())
+    }
+}
+
+/// Cloud storage provider configuration for external volumes.
+///
+/// See <https://docs.snowflake.com/en/sql-reference/sql/create-external-volume>
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CloudProviderParams {
+    /// The storage location name.
+    pub name: String,
+    /// The cloud storage provider (e.g., `S3`, `GCS`, `AZURE`).
+    pub provider: String,
+    /// Optional base URL for the storage location.
+    pub base_url: Option<String>,
+    /// Optional AWS IAM role ARN for S3 access.
+    pub aws_role_arn: Option<String>,
+    /// Optional AWS S3 access point ARN.
+    pub aws_access_point_arn: Option<String>,
+    /// Optional AWS external ID for cross-account access.
+    pub aws_external_id: Option<String>,
+    /// Optional Azure tenant ID.
+    pub azure_tenant_id: Option<String>,
+    /// Optional S3-compatible storage endpoint.
+    pub storage_endpoint: Option<String>,
+    /// Whether to use a private link endpoint.
+    pub use_private_link_endpoint: Option<bool>,
+    /// Encryption options for the storage location.
+    pub encryption: KeyValueOptions,
+    /// Credential options for the storage location.
+    pub credentials: KeyValueOptions,
+}
+
+impl fmt::Display for CloudProviderParams {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "NAME = '{}' STORAGE_PROVIDER = '{}'",
+            self.name, self.provider
+        )?;
+
+        if let Some(base_url) = &self.base_url {
+            write!(f, " STORAGE_BASE_URL = '{base_url}'")?;
+        }
+
+        if let Some(arn) = &self.aws_role_arn {
+            write!(f, " STORAGE_AWS_ROLE_ARN = '{arn}'")?;
+        }
+
+        if let Some(ap_arn) = &self.aws_access_point_arn {
+            write!(f, " STORAGE_AWS_ACCESS_POINT_ARN = '{ap_arn}'")?;
+        }
+
+        if let Some(ext_id) = &self.aws_external_id {
+            write!(f, " STORAGE_AWS_EXTERNAL_ID = '{ext_id}'")?;
+        }
+
+        if let Some(tenant_id) = &self.azure_tenant_id {
+            write!(f, " AZURE_TENANT_ID = '{tenant_id}'")?;
+        }
+
+        if let Some(endpoint) = &self.storage_endpoint {
+            write!(f, " STORAGE_ENDPOINT = '{endpoint}'")?;
+        }
+
+        if let Some(use_pl) = self.use_private_link_endpoint {
+            write!(
+                f,
+                " USE_PRIVATELINK_ENDPOINT = {}",
+                if use_pl { "TRUE" } else { "FALSE" }
+            )?;
+        }
+
+        if !self.encryption.options.is_empty() {
+            write!(f, " ENCRYPTION=({})", self.encryption)?;
+        }
+
+        if !self.credentials.options.is_empty() {
+            write!(f, " CREDENTIALS=({})", self.credentials)?;
         }
         Ok(())
     }
