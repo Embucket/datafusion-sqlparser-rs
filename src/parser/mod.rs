@@ -4385,7 +4385,7 @@ impl<'a> Parser<'a> {
             self.parse_create_view(or_replace, temporary, create_view_params)
         } else if self.parse_keyword(Keyword::POLICY) {
             self.parse_create_policy()
-        } else if self.parse_keywords(&[Keyword::EXTERNAL, Keyword::TABLE])  {
+        } else if self.parse_keywords(&[Keyword::EXTERNAL, Keyword::TABLE]) {
             self.parse_create_external_table(or_replace)
         } else if self.parse_keyword(Keyword::FUNCTION) {
             self.parse_create_function(or_replace, temporary)
