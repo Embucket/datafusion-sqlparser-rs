@@ -285,6 +285,7 @@ impl Spanned for Values {
 /// - [Statement::CreateFunction]
 /// - [Statement::CreateTrigger]
 /// - [Statement::DropTrigger]
+/// - [Statement::CreateExternalVolume]
 /// - [Statement::CreateProcedure]
 /// - [Statement::CreateMacro]
 /// - [Statement::CreateStage]
@@ -441,6 +442,7 @@ impl Spanned for Statement {
             Statement::CreateDomain { .. } => Span::empty(),
             Statement::CreateTrigger { .. } => Span::empty(),
             Statement::DropTrigger { .. } => Span::empty(),
+            Statement::CreateExternalVolume { .. } => Span::empty(),
             Statement::CreateProcedure { .. } => Span::empty(),
             Statement::CreateMacro { .. } => Span::empty(),
             Statement::CreateStage { .. } => Span::empty(),

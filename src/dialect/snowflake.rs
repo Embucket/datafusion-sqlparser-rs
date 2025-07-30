@@ -31,8 +31,8 @@ use crate::ast::{
     ColumnPolicy, ColumnPolicyProperty, ContactEntry, CopyIntoSnowflakeKind, CreateTable,
     CreateTableLikeKind, DollarQuotedString, Ident, IdentityParameters, IdentityProperty,
     IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, InitializeKind,
-    ObjectName, ObjectNamePart, RefreshModeKind, RowAccessPolicy, ShowObjects, SqlOption,
-    Statement, StorageSerializationPolicy, TagsColumnOption, Value, WrappedCollection,
+    CloudProviderParams, ObjectName, ObjectNamePart, RefreshModeKind, RowAccessPolicy, ShowObjects,
+    SqlOption, Statement, StorageSerializationPolicy, TagsColumnOption, Value, WrappedCollection,
 };
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
@@ -312,6 +312,8 @@ impl Dialect for SnowflakeDialect {
                 );
             } else if parser.parse_keyword(Keyword::DATABASE) {
                 return Some(parse_create_database(or_replace, transient, parser));
+            } else if parser.parse_keywords(&[Keyword::EXTERNAL, Keyword::VOLUME]) {
+                return Some(parse_create_external_volume(or_replace, parser));
             } else {
                 // need to go back with the cursor
                 let mut back = 1;
@@ -1108,6 +1110,153 @@ pub fn parse_create_database(
         }
     }
     Ok(builder.build())
+}
+
+fn parse_create_external_volume(
+    or_replace: bool,
+    parser: &mut Parser,
+) -> Result<Statement, ParserError> {
+    let if_not_exists = parser.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+    let name = parser.parse_object_name(false)?;
+    let mut comment = None;
+    let mut allow_writes = None;
+    let mut storage_locations = Vec::new();
+
+    // STORAGE_LOCATIONS (...)
+    if parser.parse_keywords(&[Keyword::STORAGE_LOCATIONS]) {
+        parser.expect_token(&Token::Eq)?;
+        storage_locations = parse_storage_locations(parser)?;
+    };
+
+    // ALLOW_WRITES [ = true | false ]
+    if parser.parse_keyword(Keyword::ALLOW_WRITES) {
+        parser.expect_token(&Token::Eq)?;
+        allow_writes = Some(parser.parse_boolean_string()?);
+    }
+
+    // COMMENT = '...'
+    if parser.parse_keyword(Keyword::COMMENT) {
+        parser.expect_token(&Token::Eq)?;
+        comment = Some(parser.parse_literal_string()?);
+    }
+
+    if storage_locations.is_empty() {
+        return Err(ParserError::ParserError(
+            "STORAGE_LOCATIONS is required for CREATE EXTERNAL VOLUME".to_string(),
+        ));
+    }
+
+    Ok(Statement::CreateExternalVolume {
+        or_replace,
+        if_not_exists,
+        name,
+        allow_writes,
+        comment,
+        storage_locations,
+    })
+}
+
+fn parse_storage_locations(parser: &mut Parser) -> Result<Vec<CloudProviderParams>, ParserError> {
+    let mut locations = Vec::new();
+    parser.expect_token(&Token::LParen)?;
+
+    loop {
+        parser.expect_token(&Token::LParen)?;
+
+        let mut name = None;
+        let mut provider = None;
+        let mut base_url = None;
+        let mut aws_role_arn = None;
+        let mut aws_access_point_arn = None;
+        let mut aws_external_id = None;
+        let mut azure_tenant_id = None;
+        let mut storage_endpoint = None;
+        let mut use_private_link_endpoint = None;
+        let mut encryption = KeyValueOptions {
+            options: vec![],
+            delimiter: KeyValueOptionsDelimiter::Space,
+        };
+        let mut credentials = KeyValueOptions {
+            options: vec![],
+            delimiter: KeyValueOptionsDelimiter::Space,
+        };
+
+        loop {
+            if parser.parse_keyword(Keyword::NAME) {
+                parser.expect_token(&Token::Eq)?;
+                name = Some(parser.parse_literal_string()?);
+            } else if parser.parse_keyword(Keyword::STORAGE_PROVIDER) {
+                parser.expect_token(&Token::Eq)?;
+                provider = Some(parser.parse_literal_string()?);
+            } else if parser.parse_keyword(Keyword::STORAGE_BASE_URL) {
+                parser.expect_token(&Token::Eq)?;
+                base_url = Some(parser.parse_literal_string()?);
+            } else if parser.parse_keyword(Keyword::STORAGE_AWS_ROLE_ARN) {
+                parser.expect_token(&Token::Eq)?;
+                aws_role_arn = Some(parser.parse_literal_string()?);
+            } else if parser.parse_keyword(Keyword::STORAGE_AWS_ACCESS_POINT_ARN) {
+                parser.expect_token(&Token::Eq)?;
+                aws_access_point_arn = Some(parser.parse_literal_string()?);
+            } else if parser.parse_keyword(Keyword::STORAGE_AWS_EXTERNAL_ID) {
+                parser.expect_token(&Token::Eq)?;
+                aws_external_id = Some(parser.parse_literal_string()?);
+            } else if parser.parse_keyword(Keyword::AZURE_TENANT_ID) {
+                parser.expect_token(&Token::Eq)?;
+                azure_tenant_id = Some(parser.parse_literal_string()?);
+            } else if parser.parse_keyword(Keyword::STORAGE_ENDPOINT) {
+                parser.expect_token(&Token::Eq)?;
+                storage_endpoint = Some(parser.parse_literal_string()?);
+            } else if parser.parse_keyword(Keyword::USE_PRIVATELINK_ENDPOINT) {
+                parser.expect_token(&Token::Eq)?;
+                use_private_link_endpoint = Some(parser.parse_boolean_string()?);
+            } else if parser.parse_keyword(Keyword::ENCRYPTION) {
+                parser.expect_token(&Token::Eq)?;
+                encryption = KeyValueOptions {
+                    options: parser.parse_key_value_options(true, &[])?.options,
+                    delimiter: KeyValueOptionsDelimiter::Space,
+                };
+            } else if parser.parse_keyword(Keyword::CREDENTIALS) {
+                parser.expect_token(&Token::Eq)?;
+                credentials = KeyValueOptions {
+                    options: parser.parse_key_value_options(true, &[])?.options,
+                    delimiter: KeyValueOptionsDelimiter::Space,
+                };
+            } else if parser.consume_token(&Token::RParen) {
+                break;
+            } else {
+                return parser.expected("a valid key or closing paren", parser.peek_token());
+            }
+        }
+
+        let Some(name) = name else {
+            return parser.expected("NAME = '...'", parser.peek_token());
+        };
+
+        let Some(provider) = provider else {
+            return parser.expected("STORAGE_PROVIDER = '...'", parser.peek_token());
+        };
+
+        locations.push(CloudProviderParams {
+            name,
+            provider,
+            base_url,
+            aws_role_arn,
+            aws_access_point_arn,
+            aws_external_id,
+            azure_tenant_id,
+            storage_endpoint,
+            use_private_link_endpoint,
+            encryption,
+            credentials,
+        });
+        // EXIT if next token is RParen
+        if parser.consume_token(&Token::RParen) {
+            break;
+        }
+        // Otherwise expect a comma before next object
+        parser.expect_token(&Token::Comma)?;
+    }
+    Ok(locations)
 }
 
 pub fn parse_storage_serialization_policy(
