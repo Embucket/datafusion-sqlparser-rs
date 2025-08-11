@@ -830,7 +830,7 @@ impl<'a> Tokenizer<'a> {
         Self {
             dialect,
             query,
-            unescape: true,
+            unescape: false,
         }
     }
 
