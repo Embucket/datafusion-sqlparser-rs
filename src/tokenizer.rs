@@ -830,7 +830,7 @@ impl<'a> Tokenizer<'a> {
         Self {
             dialect,
             query,
-            unescape: false,
+            unescape: true,
         }
     }
 
@@ -1323,6 +1323,9 @@ impl<'a> Tokenizer<'a> {
                                 prefix: "//".to_owned(),
                                 comment,
                             })))
+                        }
+                        Some('\\') if dialect_of!(self is SnowflakeDialect) => {
+                            Ok(Some(Token::Backslash))
                         }
                         Some('/') if dialect_of!(self is DuckDbDialect | GenericDialect) => {
                             self.consume_and_return(chars, Token::DuckIntDiv)
