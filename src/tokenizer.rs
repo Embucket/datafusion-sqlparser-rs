@@ -2005,18 +2005,18 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 char if dialect_of!(self is SnowflakeDialect) && char.is_ascii_control() => {
-                    let n = match char {
-                        '\x00' => '\0',
-                        '\x07' => '\u{7}',
-                        '\x08' => '\u{8}',
-                        '\x12' => '\u{c}',
-                        '\x10' => '\n',
-                        '\x13' => '\r',
-                        '\x09' => '\t',
-                        '\x26' => '\u{1a}',
-                        _ => char,
-                    };
-                    s.push(n);
+                    // let n = match char {
+                    //     '\x00' => '\0',
+                    //     '\x07' => '\u{7}',
+                    //     '\x08' => '\u{8}',
+                    //     '\x12' => '\u{c}',
+                    //     '\x10' => '\n',
+                    //     '\x13' => '\r',
+                    //     '\x09' => '\t',
+                    //     '\x26' => '\u{1a}',
+                    //     _ => char,
+                    // };
+                    s.push('\0');
                     chars.next(); // consume symbol
                 }
                 '\\' if settings.backslash_escape => {
