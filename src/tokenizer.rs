@@ -1324,9 +1324,6 @@ impl<'a> Tokenizer<'a> {
                                 comment,
                             })))
                         }
-                        Some('\\') if dialect_of!(self is SnowflakeDialect) => {
-                            Ok(Some(Token::Backslash))
-                        }
                         Some('/') if dialect_of!(self is DuckDbDialect | GenericDialect) => {
                             self.consume_and_return(chars, Token::DuckIntDiv)
                         }
@@ -2006,6 +2003,21 @@ impl<'a> Tokenizer<'a> {
                     } else {
                         return Ok(s);
                     }
+                }
+                char if dialect_of!(self is SnowflakeDialect) && char.is_ascii_control() => {
+                    let n = match char {
+                        '\x00' => '\0',
+                        '\x07' => '\u{7}',
+                        '\x08' => '\u{8}',
+                        '\x12' => '\u{c}',
+                        '\x10' => '\n',
+                        '\x13' => '\r',
+                        '\x09' => '\t',
+                        '\x26' => '\u{1a}',
+                        _ => char,
+                    };
+                    s.push(n);
+                    chars.next(); // consume symbol
                 }
                 '\\' if settings.backslash_escape => {
                     // consume backslash
