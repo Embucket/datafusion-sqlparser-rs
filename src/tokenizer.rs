@@ -2031,11 +2031,11 @@ impl<'a> Tokenizer<'a> {
                             s.push(ch);
                             s.push(*next);
                             chars.next(); // consume next
-                        //if [\\]\\b -> [\\]b    
-                        } else if dialect_of!(self is SnowflakeDialect) && *next == '\\' {
+                        //if [\\]\\b -> [\\]b
+                        } else if dialect_of!(self is SnowflakeDialect) {
                             s.push(*next);
                             chars.next();
-                            //if [\\]b -> \\[b] 
+                            //if [\\]b -> \\[b]
                             if let Some(next) = chars.peek() {
                                 s.push(*next);
                                 chars.next();
