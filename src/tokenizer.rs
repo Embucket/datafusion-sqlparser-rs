@@ -2032,27 +2032,30 @@ impl<'a> Tokenizer<'a> {
                             s.push(*next);
                             chars.next(); // consume next
                         //if [\\]\\b -> [\\]b
-                        } else if dialect_of!(self is SnowflakeDialect) {
-                            s.push(ch);
-                            s.push(*next);
-                            chars.next();
-                            //if [\\]b -> \\[b]
-                            if let Some(next) = chars.peek() {
-                                s.push(*next);
-                                chars.next();
-                            }
-                        } else {
-                            let n = match next {
-                                '0' => '\0',
-                                'a' => '\u{7}',
-                                'b' => '\u{8}',
-                                'f' => '\u{c}',
-                                'n' => '\n',
-                                'r' => '\r',
-                                't' => '\t',
-                                'Z' => '\u{1a}',
-                                _ => *next,
-                            };
+                        }
+                        // else if dialect_of!(self is SnowflakeDialect) {
+                        //     s.push(ch);
+                        //     s.push(*next);
+                        //     chars.next();
+                        //     //if [\\]b -> \\[b]
+                        //     if let Some(next) = chars.peek() {
+                        //         s.push(*next);
+                        //         chars.next();
+                        //     }
+                        // }
+                        else {
+                            // let n = match next {
+                            //     '0' => '\0',
+                            //     'a' => '\u{7}',
+                            //     'b' => '\u{8}',
+                            //     'f' => '\u{c}',
+                            //     'n' => '\n',
+                            //     'r' => '\r',
+                            //     't' => '\t',
+                            //     'Z' => '\u{1a}',
+                            //     _ => *next,
+                            // };
+                            let n = 'Y';
                             s.push(n);
                             chars.next(); // consume next
                         }
