@@ -2035,7 +2035,7 @@ impl<'a> Tokenizer<'a> {
                             s.push('\\');
                             chars.next();
                             if let Some(next) = chars.peek()  {
-                                s.push(*next);
+                                s.push('\x08');
                                 chars.next();
                             }
                         } else {
