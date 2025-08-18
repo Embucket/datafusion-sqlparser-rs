@@ -2034,7 +2034,6 @@ impl<'a> Tokenizer<'a> {
                         }
                         else {
                             let n = if dialect_of!(self is SnowflakeDialect) {
-                                s.push('\\');
                                 *next
                             } else {
                                 match next {
