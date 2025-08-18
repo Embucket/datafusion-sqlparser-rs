@@ -2018,8 +2018,10 @@ impl<'a> Tokenizer<'a> {
                             chars.next(); // consume next
                         } else if dialect_of!(self is SnowflakeDialect) {
                             s.push(ch);
-                            s.push(*next);
                             chars.next();
+                            if let Some(_) = chars.peek() {
+                                s.push('Y');
+                            }
                         } else {
                             let n = match next {
                                 '0' => '\0',
