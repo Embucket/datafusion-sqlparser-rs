@@ -2032,7 +2032,12 @@ impl<'a> Tokenizer<'a> {
                             s.push(*next);
                             chars.next(); // consume next
                         } else if dialect_of!(self is SnowflakeDialect) {
+                            s.push('\\');
                             s.push(*next);
+                            chars.next();
+                            if let Some(_) = chars.peek()  {
+                                chars.next();
+                            }
                         } else {
                             let n = match next {
                                 '0' => '\0',
