@@ -2020,9 +2020,6 @@ impl<'a> Tokenizer<'a> {
                 //     chars.next(); // consume symbol
                 // }
                 '\\' if settings.backslash_escape => {
-                    if dialect_of!(self is SnowflakeDialect) {
-                        s.push(ch);
-                    }
                     // consume backslash
                     chars.next();
 
@@ -2031,9 +2028,7 @@ impl<'a> Tokenizer<'a> {
                     if let Some(next) = chars.peek() {
                         if !self.unescape {
                             // In no-escape mode, the given query has to be saved completely including backslashes.
-                            if !dialect_of!(self is SnowflakeDialect) {
-                                s.push(ch);
-                            }
+                            s.push(ch);
                             s.push(*next);
                             chars.next(); // consume next
                         }
@@ -2049,6 +2044,9 @@ impl<'a> Tokenizer<'a> {
                                 'Z' => '\u{1a}',
                                 _ => *next,
                             };
+                            if dialect_of!(self is SnowflakeDialect) {
+                                s.push('\\');
+                            }
                             s.push(n);
                             chars.next(); // consume next
                         }
