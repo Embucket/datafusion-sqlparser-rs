@@ -2033,20 +2033,22 @@ impl<'a> Tokenizer<'a> {
                             chars.next(); // consume next
                         }
                         else {
-                            let n = match next {
-                                '0' => '\0',
-                                'a' => '\u{7}',
-                                'b' => '\u{8}',
-                                'f' => '\u{c}',
-                                'n' => '\n',
-                                'r' => '\r',
-                                't' => '\t',
-                                'Z' => '\u{1a}',
-                                _ => *next,
+                            let n = if dialect_of!(self is SnowflakeDialect) {
+                                s.push('\\');
+                                *next
+                            } else {
+                                match next {
+                                    '0' => '\0',
+                                    'a' => '\u{7}',
+                                    'b' => '\u{8}',
+                                    'f' => '\u{c}',
+                                    'n' => '\n',
+                                    'r' => '\r',
+                                    't' => '\t',
+                                    'Z' => '\u{1a}',
+                                    _ => *next,
+                                }
                             };
-                            // if dialect_of!(self is SnowflakeDialect) {
-                            //     s.push('');
-                            // }
                             s.push(n);
                             chars.next(); // consume next
                         }
