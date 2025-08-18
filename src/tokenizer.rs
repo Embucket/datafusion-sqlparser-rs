@@ -2044,9 +2044,9 @@ impl<'a> Tokenizer<'a> {
                                 'Z' => '\u{1a}',
                                 _ => *next,
                             };
-                            if dialect_of!(self is SnowflakeDialect) {
-                                s.push('\\');
-                            }
+                            // if dialect_of!(self is SnowflakeDialect) {
+                            //     s.push('');
+                            // }
                             s.push(n);
                             chars.next(); // consume next
                         }
