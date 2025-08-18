@@ -2055,8 +2055,8 @@ impl<'a> Tokenizer<'a> {
                             //     'Z' => '\u{1a}',
                             //     _ => *next,
                             // };
-                            s.push('\\');
-                            s.push('\\');
+                            // s.push('\\');
+                            // s.push('\\');
                             s.push(*next);
                             chars.next(); // consume next
                         }
