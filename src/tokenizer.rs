@@ -2017,12 +2017,14 @@ impl<'a> Tokenizer<'a> {
                             s.push(*next);
                             chars.next(); // consume next
                         } else if dialect_of!(self is SnowflakeDialect) {
-                            s.push('\\');
+                            s.push(ch);
                             chars.next();
-                            // if let Some(next) = chars.peek()  {
-                            //     s.push(*next);
-                            //     chars.next();
-                            // }
+                            if let Some(next) = chars.peek()  {
+                                s.push(*next);
+                                //no `chars.next()` to avoid the edge case
+                                // where '\\b['] where `[ ]` is the char we would be next at,
+                                // since `chars.next()` wouldn't allow us to terminate this string
+                            }
                         } else {
                             let n = match next {
                                 '0' => '\0',
