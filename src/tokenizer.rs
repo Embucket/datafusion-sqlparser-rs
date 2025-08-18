@@ -2018,10 +2018,8 @@ impl<'a> Tokenizer<'a> {
                             chars.next(); // consume next
                         } else if dialect_of!(self is SnowflakeDialect) {
                             s.push(ch);
-                            chars.next();
-                            if let Some(next) = chars.peek() {
-                                s.push(*next);
-                                chars.next();
+                            if let Some(next) = chars.next() {
+                                s.push(next);
                                 if let Some(next) = chars.peek() {
                                     if *next == settings.quote_style {
                                         num_consecutive_quotes += 1;
