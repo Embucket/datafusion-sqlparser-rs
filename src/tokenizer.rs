@@ -2020,6 +2020,9 @@ impl<'a> Tokenizer<'a> {
                 //     chars.next(); // consume symbol
                 // }
                 '\\' if settings.backslash_escape => {
+                    if dialect_of!(self is SnowflakeDialect) {
+                        s.push(ch);
+                    }
                     // consume backslash
                     chars.next();
 
@@ -2028,36 +2031,25 @@ impl<'a> Tokenizer<'a> {
                     if let Some(next) = chars.peek() {
                         if !self.unescape {
                             // In no-escape mode, the given query has to be saved completely including backslashes.
-                            s.push(ch);
+                            if !dialect_of!(self is SnowflakeDialect) {
+                                s.push(ch);
+                            }
                             s.push(*next);
                             chars.next(); // consume next
-                        //if [\\]\\b -> [\\]b
                         }
-                        // else if dialect_of!(self is SnowflakeDialect) {
-                        //     s.push(ch);
-                        //     s.push(*next);
-                        //     chars.next();
-                        //     //if [\\]b -> \\[b]
-                        //     if let Some(next) = chars.peek() {
-                        //         s.push(*next);
-                        //         chars.next();
-                        //     }
-                        // }
                         else {
-                            // let n = match next {
-                            //     '0' => '\0',
-                            //     'a' => '\u{7}',
-                            //     'b' => '\u{8}',
-                            //     'f' => '\u{c}',
-                            //     'n' => '\n',
-                            //     'r' => '\r',
-                            //     't' => '\t',
-                            //     'Z' => '\u{1a}',
-                            //     _ => *next,
-                            // };
-                            // s.push('\\');
-                            // s.push('\\');
-                            s.push(*next);
+                            let n = match next {
+                                '0' => '\0',
+                                'a' => '\u{7}',
+                                'b' => '\u{8}',
+                                'f' => '\u{c}',
+                                'n' => '\n',
+                                'r' => '\r',
+                                't' => '\t',
+                                'Z' => '\u{1a}',
+                                _ => *next,
+                            };
+                            s.push(n);
                             chars.next(); // consume next
                         }
                     }
