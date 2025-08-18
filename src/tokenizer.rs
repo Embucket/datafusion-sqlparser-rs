@@ -2034,7 +2034,7 @@ impl<'a> Tokenizer<'a> {
                         }
                         else {
                             let n = if dialect_of!(self is SnowflakeDialect) {
-                                '\x08'
+                                '\\'
                             } else {
                                 match next {
                                     '0' => '\0',
