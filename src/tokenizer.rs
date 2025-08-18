@@ -2033,9 +2033,9 @@ impl<'a> Tokenizer<'a> {
                             chars.next(); // consume next
                         } else if dialect_of!(self is SnowflakeDialect) {
                             s.push('\\');
-                            s.push(*next);
                             chars.next();
-                            if let Some(_) = chars.peek()  {
+                            if let Some(next) = chars.peek()  {
+                                s.push(*next);
                                 chars.next();
                             }
                         } else {
