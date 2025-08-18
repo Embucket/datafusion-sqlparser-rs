@@ -2032,6 +2032,7 @@ impl<'a> Tokenizer<'a> {
                             s.push(*next);
                             chars.next(); // consume next
                         } else if dialect_of!(self is SnowflakeDialect) {
+                            s.push(r"\".chars().nth(0).unwrap());
                             s.push(*next);
                             chars.next();
                         } else {
