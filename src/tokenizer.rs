@@ -2004,21 +2004,6 @@ impl<'a> Tokenizer<'a> {
                         return Ok(s);
                     }
                 }
-                // char if dialect_of!(self is SnowflakeDialect) && char.is_ascii_control() => {
-                //     let n = match char {
-                //         '\x00' => '\0',
-                //         '\x07' => '\u{7}',
-                //         '\x08' => '\u{8}',
-                //         '\x12' => '\u{c}',
-                //         '\x10' => '\n',
-                //         '\x13' => '\r',
-                //         '\x09' => '\t',
-                //         '\x26' => '\u{1a}',
-                //         _ => char,
-                //     };
-                //     s.push('\0');
-                //     chars.next(); // consume symbol
-                // }
                 '\\' if settings.backslash_escape => {
                     // consume backslash
                     chars.next();
@@ -2034,10 +2019,10 @@ impl<'a> Tokenizer<'a> {
                         } else if dialect_of!(self is SnowflakeDialect) {
                             s.push('\\');
                             chars.next();
-                            if let Some(next) = chars.peek()  {
-                                s.push('\x08');
-                                chars.next();
-                            }
+                            // if let Some(next) = chars.peek()  {
+                            //     s.push(*next);
+                            //     chars.next();
+                            // }
                         } else {
                             let n = match next {
                                 '0' => '\0',
