@@ -778,6 +778,7 @@ define_keywords!(
     SECONDARY,
     SECONDS,
     SECRET,
+    SECURE,
     SECURITY,
     SEED,
     SELECT,

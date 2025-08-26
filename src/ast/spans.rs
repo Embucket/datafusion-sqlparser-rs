@@ -369,6 +369,7 @@ impl Spanned for Statement {
             Statement::CreateView {
                 or_replace: _,
                 materialized: _,
+                secure: _,
                 name,
                 columns,
                 query,
