@@ -7806,6 +7806,7 @@ fn parse_create_view() {
             temporary,
             to,
             params,
+            secure: _,
         } => {
             assert_eq!("myschema.myview", name.to_string());
             assert_eq!(Vec::<ViewColumnDef>::new(), columns);
@@ -7870,6 +7871,7 @@ fn parse_create_view_with_columns() {
             temporary,
             to,
             params,
+            secure: _,
         } => {
             assert_eq!("v", name.to_string());
             assert_eq!(
@@ -7917,6 +7919,7 @@ fn parse_create_view_temporary() {
             temporary,
             to,
             params,
+            secure: _,
         } => {
             assert_eq!("myschema.myview", name.to_string());
             assert_eq!(Vec::<ViewColumnDef>::new(), columns);
@@ -7954,6 +7957,7 @@ fn parse_create_or_replace_view() {
             temporary,
             to,
             params,
+            secure: _,
         } => {
             assert_eq!("v", name.to_string());
             assert_eq!(columns, vec![]);
@@ -7995,6 +7999,7 @@ fn parse_create_or_replace_materialized_view() {
             temporary,
             to,
             params,
+            secure: _,
         } => {
             assert_eq!("v", name.to_string());
             assert_eq!(columns, vec![]);
@@ -8032,6 +8037,7 @@ fn parse_create_materialized_view() {
             temporary,
             to,
             params,
+            secure: _,
         } => {
             assert_eq!("myschema.myview", name.to_string());
             assert_eq!(Vec::<ViewColumnDef>::new(), columns);
@@ -8069,6 +8075,7 @@ fn parse_create_materialized_view_with_cluster_by() {
             temporary,
             to,
             params,
+            secure: _,
         } => {
             assert_eq!("myschema.myview", name.to_string());
             assert_eq!(Vec::<ViewColumnDef>::new(), columns);

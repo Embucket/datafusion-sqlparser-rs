@@ -2564,6 +2564,9 @@ pub enum Statement {
     CreateView {
         or_replace: bool,
         materialized: bool,
+        /// Snowflake: SECURE view modifier
+        /// <https://docs.snowflake.com/en/sql-reference/sql/create-view#syntax>
+        secure: bool,
         /// View name
         name: ObjectName,
         columns: Vec<ViewColumnDef>,
@@ -4268,6 +4271,7 @@ impl fmt::Display for Statement {
                 columns,
                 query,
                 materialized,
+                secure,
                 options,
                 cluster_by,
                 comment,
@@ -4287,11 +4291,15 @@ impl fmt::Display for Statement {
                 }
                 write!(
                     f,
-                    "{materialized}{temporary}VIEW {if_not_exists}{name}{to}",
+                    "{secure}{materialized}{temporary}VIEW {if_not_and_name}{to}",
+                    if_not_and_name = if *if_not_exists {
+                        format!("IF NOT EXISTS {name}")
+                    } else {
+                        format!("{name}")
+                    },
+                    secure = if *secure { "SECURE " } else { "" },
                     materialized = if *materialized { "MATERIALIZED " } else { "" },
-                    name = name,
                     temporary = if *temporary { "TEMPORARY " } else { "" },
-                    if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
                     to = to
                         .as_ref()
                         .map(|to| format!(" TO {to}"))
