@@ -690,21 +690,9 @@ pub fn parse_create_table(
                 builder = builder.columns(columns).constraints(constraints);
             }
             Token::EOF => {
-                if !builder.validate_schema_info() {
-                    return Err(ParserError::ParserError(
-                        "unexpected end of input".to_string(),
-                    ));
-                }
-
                 break;
             }
             Token::SemiColon => {
-                if !builder.validate_schema_info() {
-                    return Err(ParserError::ParserError(
-                        "unexpected end of input".to_string(),
-                    ));
-                }
-
                 parser.prev_token();
                 break;
             }

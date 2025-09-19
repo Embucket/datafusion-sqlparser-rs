@@ -556,23 +556,6 @@ fn test_snowflake_create_table_comment() {
 }
 
 #[test]
-fn test_snowflake_create_table_incomplete_statement() {
-    assert_eq!(
-        snowflake().parse_sql_statements("CREATE TABLE my_table"),
-        Err(ParserError::ParserError(
-            "unexpected end of input".to_string()
-        ))
-    );
-
-    assert_eq!(
-        snowflake().parse_sql_statements("CREATE TABLE my_table; (c int)"),
-        Err(ParserError::ParserError(
-            "unexpected end of input".to_string()
-        ))
-    );
-}
-
-#[test]
 fn test_snowflake_single_line_tokenize() {
     let sql = "CREATE TABLE# this is a comment \ntable_1";
     let dialect = SnowflakeDialect {};
@@ -1044,27 +1027,6 @@ fn test_snowflake_create_table_trailing_options() {
     snowflake()
         .parse_sql_statements("CREATE TEMPORARY TABLE dst ON COMMIT PRESERVE ROWS CLONE src")
         .unwrap();
-}
-
-#[test]
-fn test_snowflake_create_table_valid_schema_info() {
-    // Validate there's exactly one source of information on the schema of the new table
-    assert_eq!(
-        snowflake()
-            .parse_sql_statements("CREATE TABLE dst")
-            .is_err(),
-        true
-    );
-    assert_eq!(
-        snowflake().parse_sql_statements("CREATE OR REPLACE TEMP TABLE dst LIKE src AS (SELECT * FROM CUSTOMERS) ON COMMIT PRESERVE ROWS").is_err(),
-        true
-    );
-    assert_eq!(
-        snowflake()
-            .parse_sql_statements("CREATE OR REPLACE TEMP TABLE dst CLONE customers LIKE customer2")
-            .is_err(),
-        true
-    );
 }
 
 #[test]
