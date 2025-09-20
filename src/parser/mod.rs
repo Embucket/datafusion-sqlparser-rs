@@ -9869,7 +9869,12 @@ impl<'a> Parser<'a> {
                     self.parse_optional_precision()?,
                     TimezoneInfo::Tz,
                 )),
-                Keyword::TIMESTAMP_NTZ => Ok(DataType::TimestampNtz),
+                // Consume optional precision for Snowflake/Databricks TIMESTAMP_NTZ, e.g. TIMESTAMP_NTZ(3)
+                // Precision is currently not represented in the AST variant, but we must not error on it.
+                Keyword::TIMESTAMP_NTZ => {
+                    let _ = self.parse_optional_precision()?;
+                    Ok(DataType::TimestampNtz)
+                }
                 Keyword::TIME => {
                     let precision = self.parse_optional_precision()?;
                     let tz = if self.parse_keyword(Keyword::WITH) {
