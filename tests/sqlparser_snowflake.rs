@@ -45,6 +45,14 @@ fn test_snowflake_create_table() {
 }
 
 #[test]
+fn test_snowflake_create_table_timestamp_ntz_precision_ctas_values() {
+    let sql = "CREATE TABLE t (x TIMESTAMP_NTZ(3)) AS SELECT * FROM VALUES ('2025-04-09T21:11:23')";
+    let canonical =
+        "CREATE TABLE t (x TIMESTAMP_NTZ(3)) AS SELECT * FROM (VALUES ('2025-04-09T21:11:23'))";
+    snowflake().one_statement_parses_to(sql, canonical);
+}
+
+#[test]
 fn parse_sf_create_secure_view_and_materialized_view() {
     for sql in [
         "CREATE SECURE VIEW v AS SELECT 1",
