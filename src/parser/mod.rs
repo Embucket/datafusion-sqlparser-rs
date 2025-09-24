@@ -15597,25 +15597,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_begin_exception_end(&mut self) -> Result<Statement, ParserError> {
-        // Snowflake allows BEGIN as a standalone transaction statement (no END).
-        // If the next token is a semicolon or EOF, treat it as a standalone BEGIN.
-        if dialect_of!(self is SnowflakeDialect) {
-            match &self.peek_token_ref().token {
-                Token::SemiColon | Token::EOF => {
-                    return Ok(Statement::StartTransaction {
-                        begin: true,
-                        statements: vec![],
-                        exception: None,
-                        has_end_keyword: false,
-                        transaction: None,
-                        modifier: None,
-                        modes: Default::default(),
-                    })
-                }
-                _ => {}
-            }
-        }
-
         let statements = self.parse_statement_list(&[Keyword::EXCEPTION, Keyword::END])?;
 
         let exception = if self.parse_keyword(Keyword::EXCEPTION) {
@@ -15647,30 +15628,17 @@ impl<'a> Parser<'a> {
             None
         };
 
-        if dialect_of!(self is SnowflakeDialect) {
-            // Make END optional for Snowflake. If present, set flag accordingly.
-            let has_end = self.parse_keyword(Keyword::END);
-            Ok(Statement::StartTransaction {
-                begin: true,
-                statements,
-                exception,
-                has_end_keyword: has_end,
-                transaction: None,
-                modifier: None,
-                modes: Default::default(),
-            })
-        } else {
-            self.expect_keyword(Keyword::END)?;
-            Ok(Statement::StartTransaction {
-                begin: true,
-                statements,
-                exception,
-                has_end_keyword: true,
-                transaction: None,
-                modifier: None,
-                modes: Default::default(),
-            })
-        }
+        self.expect_keyword(Keyword::END)?;
+
+        Ok(Statement::StartTransaction {
+            begin: true,
+            statements,
+            exception,
+            has_end_keyword: true,
+            transaction: None,
+            modifier: None,
+            modes: Default::default(),
+        })
     }
 
     pub fn parse_end(&mut self) -> Result<Statement, ParserError> {

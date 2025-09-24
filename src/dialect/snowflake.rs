@@ -132,7 +132,24 @@ impl Dialect for SnowflakeDialect {
 
     fn parse_statement(&self, parser: &mut Parser) -> Option<Result<Statement, ParserError>> {
         if parser.parse_keyword(Keyword::BEGIN) {
-            return Some(parser.parse_begin_exception_end());
+            // Allow standalone BEGIN; for Snowflake
+            match &parser.peek_token_ref().token {
+                Token::SemiColon | Token::EOF => {
+                    return Some(Ok(Statement::StartTransaction {
+                        modes: Default::default(),
+                        begin: true,
+                        transaction: None,
+                        modifier: None,
+                        statements: vec![],
+                        exception: None,
+                        has_end_keyword: false,
+                    }))
+                }
+                _ => {
+                    // BEGIN ... [EXCEPTION] ... END block
+                    return Some(parser.parse_begin_exception_end());
+                }
+            }
         }
 
         if parser.parse_keywords(&[Keyword::ALTER, Keyword::SESSION]) {
