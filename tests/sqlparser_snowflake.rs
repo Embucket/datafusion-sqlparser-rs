@@ -4741,6 +4741,40 @@ fn test_snowflake_fetch_clause_syntax() {
 }
 
 #[test]
+fn test_snowflake_begin_standalone() {
+    // BEGIN; (no END) should be allowed for Snowflake
+    let mut stmts = snowflake().parse_sql_statements("BEGIN;").unwrap();
+    assert_eq!(1, stmts.len());
+    match stmts.remove(0) {
+        Statement::StartTransaction {
+            begin,
+            has_end_keyword,
+            statements,
+            ..
+        } => {
+            assert!(begin);
+            assert!(!has_end_keyword);
+            assert!(statements.is_empty());
+        }
+        other => panic!("unexpected stmt: {other:?}"),
+    }
+}
+
+#[test]
+fn test_snowflake_begin_commit_sequence() {
+    let mut stmts = snowflake().parse_sql_statements("BEGIN; COMMIT;").unwrap();
+    assert_eq!(2, stmts.len());
+    match stmts.remove(0) {
+        Statement::StartTransaction { begin, .. } => assert!(begin),
+        other => panic!("unexpected first stmt: {other:?}"),
+    }
+    match stmts.remove(0) {
+        Statement::Commit { end, .. } => assert!(!end),
+        other => panic!("unexpected second stmt: {other:?}"),
+    }
+}
+
+#[test]
 fn test_snowflake_create_view_with_multiple_column_options() {
     let create_view_with_tag =
         r#"CREATE VIEW X (COL WITH TAG (pii='email') COMMENT 'foobar') AS SELECT * FROM Y"#;
