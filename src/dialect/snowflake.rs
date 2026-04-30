@@ -29,7 +29,7 @@ use crate::ast::helpers::stmt_data_loading::{
 use crate::ast::{
     AlterTable, AlterTableOperation, AlterTableType, CatalogSyncNamespaceMode, CloudProviderParams,
     ColumnOption, ColumnPolicy, ColumnPolicyProperty, ContactEntry, CopyIntoSnowflakeKind,
-    CreateTable, CreateTableLikeKind, DollarQuotedString, Ident, IdentityParameters,
+    CreateTable, CreateTableLikeKind, DollarQuotedString, Expr, Ident, IdentityParameters,
     IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
     InitializeKind, ObjectName, ObjectNamePart, RefreshModeKind, RowAccessPolicy, ShowObjects,
     SqlOption, Statement, StorageSerializationPolicy, TagsColumnOption, Value, WrappedCollection,
@@ -852,6 +852,18 @@ pub fn parse_create_table(
                     parser.expect_token(&Token::RParen)?;
 
                     builder = builder.cluster_by(cluster_by)
+                }
+                Keyword::PARTITION => {
+                    parser.expect_keyword_is(Keyword::BY)?;
+                    parser.expect_token(&Token::LParen)?;
+                    let exprs = parser.parse_comma_separated(|p| p.parse_expr())?;
+                    parser.expect_token(&Token::RParen)?;
+                    let partition_expr = if exprs.len() == 1 {
+                        exprs.into_iter().next().expect("len == 1")
+                    } else {
+                        Expr::Tuple(exprs)
+                    };
+                    builder = builder.partition_by(Some(Box::new(partition_expr)));
                 }
                 Keyword::ENABLE_SCHEMA_EVOLUTION => {
                     parser.expect_token(&Token::Eq)?;
