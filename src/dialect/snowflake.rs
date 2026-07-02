@@ -166,6 +166,12 @@ impl Dialect for SnowflakeDialect {
         true
     }
 
+    // Snowflake decodes octal/hex/unicode escapes and drops the backslash on
+    // unknown escapes ('\a' = 'a'); see the trait doc for the verified table.
+    fn supports_snowflake_string_literal_escapes(&self) -> bool {
+        true
+    }
+
     fn supports_within_after_array_aggregation(&self) -> bool {
         true
     }

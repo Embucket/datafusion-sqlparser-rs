@@ -1456,6 +1456,88 @@ fn test_array_agg_func() {
     }
 }
 
+#[test]
+fn snowflake_string_literal_backslash_escapes() {
+    // Escape semantics verified against live Snowflake: octal (`\o`..`\ooo`),
+    // hex `\xhh` and unicode `\u` + 4 hex digit escapes decode (malformed ones
+    // are compilation errors); `\b \f \n \r \t` decode; `\'`, `\"`, `\\`
+    // escape themselves; any other escaped character keeps the character and
+    // drops the backslash.
+    let unescaped = |sql: &str| -> String {
+        let mut tokens = Tokenizer::new(&SnowflakeDialect {}, sql)
+            .tokenize()
+            .unwrap_or_else(|e| panic!("tokenize failed for {sql}: {e}"));
+        match tokens.remove(0) {
+            Token::SingleQuotedString(s) => s,
+            other => panic!("expected a single-quoted string for {sql}, got {other:?}"),
+        }
+    };
+
+    // Octal escapes: 1-3 digits, greedy; digits 8/9 are not octal.
+    assert_eq!(unescaped(r"'\2'"), "\u{2}");
+    assert_eq!(unescaped(r"'\101'"), "A");
+    assert_eq!(unescaped(r"'\79'"), "\u{7}9");
+    assert_eq!(unescaped(r"'\8'"), "8");
+    assert_eq!(unescaped(r"'\0'"), "\0");
+    // Hex and unicode escapes.
+    assert_eq!(unescaped(r"'\x41'"), "A");
+    assert_eq!(unescaped(&format!(r"'\{}'", "u0394")), "\u{394}");
+    // Uppercase X/U are NOT escape introducers: backslash dropped, chars kept.
+    assert_eq!(unescaped(r"'\X41'"), "X41");
+    assert_eq!(unescaped(r"'\U0041'"), "U0041");
+    // Standard single-character escapes.
+    assert_eq!(unescaped(r"'\b\f\n\r\t'"), "\u{8}\u{c}\n\r\t");
+    // Self-escapes and quote escapes.
+    assert_eq!(unescaped(r"'\\'"), "\\");
+    assert_eq!(unescaped(r"'I\'m'"), "I'm");
+    assert_eq!(unescaped(r#"'\"'"#), "\"");
+    // Unknown escapes drop the backslash and keep the character (unlike the
+    // MySQL-style table where \a/\Z map to BEL/^Z).
+    assert_eq!(unescaped(r"'\a\Z\.\q\ '"), "aZ.q ");
+    assert_eq!(unescaped(r"'\%\_'"), "%_");
+    // ClickBench Q29 shape: what REGEXP_REPLACE receives after the lexer.
+    assert_eq!(
+        unescaped(r"'^https?://(www\.)?([^/]+)/.*$'"),
+        "^https?://(www.)?([^/]+)/.*$"
+    );
+    // A doubled backslash protects the next character from escape decoding,
+    // so `\\2` reaches regex functions as a `\2` backreference.
+    assert_eq!(unescaped(r"'\\2'"), "\\2");
+
+    // Malformed hex/unicode escapes are tokenizer errors, matching Snowflake's
+    // "should be exactly N digits" compilation errors.
+    for (sql, fragment) in [
+        (r"SELECT '\xZZ'".to_string(), "Invalid hex escape sequence"),
+        (r"SELECT '\x4'".to_string(), "Invalid hex escape sequence"),
+        (
+            format!(r"SELECT '\{}'", "uZZZZ"),
+            "Invalid unicode escape sequence",
+        ),
+        (
+            format!(r"SELECT '\{}'", "u12"),
+            "Invalid unicode escape sequence",
+        ),
+    ] {
+        let err = snowflake()
+            .parse_sql_statements(&sql)
+            .expect_err(&format!("expected tokenizer error for {sql}"));
+        assert!(
+            err.to_string().contains(fragment),
+            "error for {sql} should contain {fragment:?}; got: {err}"
+        );
+    }
+
+    // unescape=false mode keeps the raw text untouched.
+    let mut tokens = Tokenizer::new(&SnowflakeDialect {}, r"'\2 \x41 \q'")
+        .with_unescape(false)
+        .tokenize()
+        .expect("tokenize without unescape");
+    assert_eq!(
+        tokens.remove(0),
+        Token::SingleQuotedString(r"\2 \x41 \q".to_string())
+    );
+}
+
 fn snowflake() -> TestedDialects {
     TestedDialects::new(vec![Box::new(SnowflakeDialect {})])
 }
