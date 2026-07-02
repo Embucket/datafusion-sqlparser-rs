@@ -11219,10 +11219,16 @@ fn parse_escaped_string_with_unescape() {
     let escaping_dialects =
         &all_dialects_where(|dialect| dialect.supports_string_literal_backslash_escape());
     let no_wildcard_exception = &all_dialects_where(|dialect| {
-        dialect.supports_string_literal_backslash_escape() && !dialect.ignores_wildcard_escapes()
+        dialect.supports_string_literal_backslash_escape()
+            && !dialect.ignores_wildcard_escapes()
+            && !dialect.supports_snowflake_string_literal_escapes()
     });
     let with_wildcard_exception = &all_dialects_where(|dialect| {
         dialect.supports_string_literal_backslash_escape() && dialect.ignores_wildcard_escapes()
+    });
+    let snowflake_escape_table = &all_dialects_where(|dialect| {
+        dialect.supports_string_literal_backslash_escape()
+            && dialect.supports_snowflake_string_literal_escapes()
     });
 
     let sql = r"SELECT 'I\'m fine'";
@@ -11246,6 +11252,15 @@ fn parse_escaped_string_with_unescape() {
         with_wildcard_exception,
         sql,
         "Testing: \0 \\ \\% \\_ \u{8} \n \r \t \u{1a} \u{7} h  ",
+    );
+
+    // Snowflake-style dialects treat \0 as an octal escape and drop the
+    // backslash on unknown escapes (\Z, \a, \h) instead of mapping them to
+    // control characters.
+    assert_mysql_query_value(
+        snowflake_escape_table,
+        sql,
+        "Testing: \0 \\ % _ \u{8} \n \r \t Z a h  ",
     );
 }
 

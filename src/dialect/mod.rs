@@ -283,6 +283,24 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Determine whether backslash escapes in string literals use Snowflake's
+    /// escape table instead of the MySQL-style default.
+    ///
+    /// Snowflake (verified against the live service) decodes octal `\o`..`\ooo`
+    /// (one to three digits, greedy), hex `\xhh` (exactly two hex digits, else a
+    /// tokenizer error), unicode `\uXXXX` (exactly four hex digits, else a
+    /// tokenizer error), and the single-character escapes `\b \f \n \r \t`;
+    /// `\'`, `\"` and `\\` escape themselves. Any other escaped character keeps
+    /// the character and drops the backslash (`'\a' = 'a'`, `'\Z' = 'Z'`,
+    /// `'\.' = '.'`) — notably `\a`/`\Z` do NOT decode to BEL/^Z as they do in
+    /// the MySQL-style table used when this returns false.
+    ///
+    /// Only consulted when [`Self::supports_string_literal_backslash_escape`]
+    /// returns true.
+    fn supports_snowflake_string_literal_escapes(&self) -> bool {
+        false
+    }
+
     /// Determine whether the dialect strips the backslash when escaping LIKE wildcards (%, _).
     ///
     /// [MySQL] has a special case when escaping single quoted strings which leaves these unescaped
