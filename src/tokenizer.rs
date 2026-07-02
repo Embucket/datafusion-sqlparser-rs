@@ -2259,6 +2259,8 @@ impl<'a> Tokenizer<'a> {
                             s.push(ch);
                             s.push(*next);
                             chars.next(); // consume next
+                        } else if self.dialect.supports_snowflake_string_literal_escapes() {
+                            self.push_snowflake_string_escape(&mut s, chars)?;
                         } else {
                             let n = match next {
                                 '0' => '\0',
@@ -2290,6 +2292,99 @@ impl<'a> Tokenizer<'a> {
             }
         }
         self.tokenizer_error(error_loc, "Unterminated string literal")
+    }
+
+    /// Decode one Snowflake-style backslash escape inside a quoted string.
+    ///
+    /// The backslash itself has already been consumed; the character after it is
+    /// peeked but not consumed. Semantics verified against live Snowflake:
+    /// octal `\o`..`\ooo` (greedy, 1-3 digits), hex `\xhh` and unicode `\uXXXX`
+    /// (exact digit counts, malformed sequences are errors — matching
+    /// Snowflake's compilation errors), C-style `\b \f \n \r \t`, and for any
+    /// other character the backslash is dropped and the character kept.
+    fn push_snowflake_string_escape(
+        &self,
+        s: &mut String,
+        chars: &mut State,
+    ) -> Result<(), TokenizerError> {
+        let Some(&next) = chars.peek() else {
+            // Lone trailing backslash: nothing to decode; the enclosing loop
+            // reports the unterminated string literal.
+            return Ok(());
+        };
+        match next {
+            'b' | 'f' | 'n' | 'r' | 't' => {
+                chars.next();
+                s.push(match next {
+                    'b' => '\u{8}',
+                    'f' => '\u{c}',
+                    'n' => '\n',
+                    'r' => '\r',
+                    _ => '\t',
+                });
+            }
+            '0'..='7' => {
+                // Octal escape: 1-3 octal digits, greedy ('\101' = 'A',
+                // '\79' = '\u{7}' followed by '9').
+                chars.next();
+                let mut v = next.to_digit(8).unwrap_or_default();
+                for _ in 0..2 {
+                    match chars.peek().and_then(|c| c.to_digit(8)) {
+                        Some(d) => {
+                            v = v * 8 + d;
+                            chars.next();
+                        }
+                        None => break,
+                    }
+                }
+                // Max \777 = 511, always a valid scalar value.
+                s.push(char::from_u32(v).unwrap_or('\0'));
+            }
+            'x' | 'u' => {
+                let error_loc = chars.location();
+                let (digits, label) = if next == 'x' {
+                    (2, "hex")
+                } else {
+                    (4, "unicode")
+                };
+                chars.next();
+                let mut v = 0u32;
+                for _ in 0..digits {
+                    match chars.peek().and_then(|c| c.to_digit(16)) {
+                        Some(d) => {
+                            v = v * 16 + d;
+                            chars.next();
+                        }
+                        None => {
+                            return self.tokenizer_error(
+                                error_loc,
+                                format!(
+                                    "Invalid {label} escape sequence '\\{next}'; should be exactly {digits} digits"
+                                ),
+                            );
+                        }
+                    }
+                }
+                match char::from_u32(v) {
+                    Some(c) => s.push(c),
+                    None => {
+                        return self.tokenizer_error(
+                            error_loc,
+                            format!(
+                                "Invalid {label} escape sequence '\\{next}'; not a valid code point"
+                            ),
+                        );
+                    }
+                }
+            }
+            // `\'`, `\"`, `\\` escape themselves; any other character keeps
+            // itself and the backslash is dropped ('\a' = 'a', '\Z' = 'Z').
+            _ => {
+                chars.next();
+                s.push(next);
+            }
+        }
+        Ok(())
     }
 
     fn tokenize_multiline_comment(
@@ -3838,10 +3933,13 @@ mod tests {
             (r#"'%a\'%b'"#, r#"%a\'%b"#, r#"%a'%b"#),
             (r#"'a\'\'b\'c\'d'"#, r#"a\'\'b\'c\'d"#, r#"a''b'c'd"#),
             (r#"'\\'"#, r#"\\"#, r#"\"#),
+            // Snowflake semantics (verified live): \0 is an octal escape;
+            // \a and \Z are unknown escapes, so the backslash is dropped and
+            // the character kept (they are NOT the MySQL BEL/^Z escapes).
             (
                 r#"'\0\a\b\f\n\r\t\Z'"#,
                 r#"\0\a\b\f\n\r\t\Z"#,
-                "\0\u{7}\u{8}\u{c}\n\r\t\u{1a}",
+                "\0a\u{8}\u{c}\n\r\tZ",
             ),
             (r#"'\"'"#, r#"\""#, "\""),
             (r#"'\\a\\b\'c'"#, r#"\\a\\b\'c"#, r#"\a\b'c"#),
