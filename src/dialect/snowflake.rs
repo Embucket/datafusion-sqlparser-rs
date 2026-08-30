@@ -27,15 +27,15 @@ use crate::ast::helpers::stmt_data_loading::{
     FileStagingCommand, StageLoadSelectItem, StageLoadSelectItemKind, StageParamsObject,
 };
 use crate::ast::{
-    AlterTable, AlterTableOperation, AlterTableType, CatalogSyncNamespaceMode, ColumnOption,
-    ColumnPolicy, ColumnPolicyProperty, ContactEntry, CopyIntoSnowflakeKind, CreateTable,
-    CreateTableLikeKind, DollarQuotedString, Expr, Ident, IdentityParameters, IdentityProperty,
-    IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, InitializeKind,
-    CloudProviderParams,
-    Insert, MultiTableInsertIntoClause, MultiTableInsertType, MultiTableInsertValue,
-    MultiTableInsertValues, MultiTableInsertWhenClause, ObjectName, ObjectNamePart,
-    RefreshModeKind, RowAccessPolicy, ShowObjects, SqlOption, Statement, StorageLifecyclePolicy,
-    StorageSerializationPolicy, TableObject, TagsColumnOption, Value, WrappedCollection,
+    AlterTable, AlterTableOperation, AlterTableType, CatalogSyncNamespaceMode, CloudProviderParams,
+    ColumnOption, ColumnPolicy, ColumnPolicyProperty, ContactEntry, CopyIntoSnowflakeKind,
+    CreateTable, CreateTableLikeKind, DollarQuotedString, Expr, Ident, IdentityParameters,
+    IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
+    InitializeKind, Insert, MultiTableInsertIntoClause, MultiTableInsertType,
+    MultiTableInsertValue, MultiTableInsertValues, MultiTableInsertWhenClause, ObjectName,
+    ObjectNamePart, RefreshModeKind, RowAccessPolicy, ShowObjects, SqlOption, Statement,
+    StorageLifecyclePolicy, StorageSerializationPolicy, TableObject, TagsColumnOption, Value,
+    WrappedCollection,
 };
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
