@@ -36,6 +36,11 @@ impl Dialect for SparkSqlDialect {
         matches!(ch, '`')
     }
 
+    /// See <https://spark.apache.org/docs/latest/sql-ref-identifier.html>
+    fn identifier_quote_style(&self, _identifier: &str) -> Option<char> {
+        Some('`')
+    }
+
     fn is_identifier_start(&self, ch: char) -> bool {
         matches!(ch, 'a'..='z' | 'A'..='Z' | '_')
     }
@@ -113,6 +118,13 @@ impl Dialect for SparkSqlDialect {
 
     /// See <https://spark.apache.org/docs/latest/sql-ref-datatypes.html>
     fn supports_map_literal_with_angle_brackets(&self) -> bool {
+        true
+    }
+
+    /// See:
+    /// - <https://spark.apache.org/docs/latest/sql-pipe-syntax.html>
+    /// - <https://issues.apache.org/jira/browse/SPARK-49528>
+    fn supports_pipe_operator(&self) -> bool {
         true
     }
 

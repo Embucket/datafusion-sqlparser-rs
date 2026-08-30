@@ -40,6 +40,8 @@ use core::{
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "visitor")]
+use core::ops::ControlFlow;
+#[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
 
 use crate::{
@@ -53,7 +55,7 @@ use crate::{
 
 pub use self::data_type::{
     ArrayElemTypeDef, BinaryLength, CharLengthUnits, CharacterLength, DataType, EnumMember,
-    ExactNumberInfo, IntervalFields, StructBracketKind, TimezoneInfo,
+    ExactNumberInfo, IntervalFields, MapBracketKind, StructBracketKind, TimezoneInfo,
 };
 pub use self::dcl::{
     AlterRoleOperation, CreateRole, Grant, ResetConfig, Revoke, RoleOption, SecondaryRoles,
@@ -65,29 +67,31 @@ pub use self::ddl::{
     AlterIndexOperation, AlterOperator, AlterOperatorClass, AlterOperatorClassOperation,
     AlterOperatorFamily, AlterOperatorFamilyOperation, AlterOperatorOperation, AlterPolicy,
     AlterPolicyOperation, AlterSchema, AlterSchemaOperation, AlterTable, AlterTableAlgorithm,
-    AlterTableLock, AlterTableOperation, AlterTableType, AlterType, AlterTypeAddValue,
-    AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename, AlterTypeRenameValue,
-    ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions, ColumnPolicy,
-    ColumnPolicyProperty, ConstraintCharacteristics, CreateCollation, CreateCollationDefinition,
-    CreateConnector, CreateDomain, CreateExtension, CreateFunction, CreateIndex, CreateOperator,
+    AlterTableLock, AlterTableOperation, AlterTableType, AlterTextSearch, AlterTextSearchOperation,
+    AlterTextSearchOption, AlterType, AlterTypeAddValue, AlterTypeAddValuePosition,
+    AlterTypeOperation, AlterTypeRename, AlterTypeRenameValue, ClusteredBy, ColumnDef,
+    ColumnOption, ColumnOptionDef, ColumnOptions, ColumnPolicy, ColumnPolicyProperty,
+    ConstraintCharacteristics, CreateCollation, CreateCollationDefinition, CreateConnector,
+    CreateDomain, CreateExtension, CreateFunction, CreateIndex, CreateOperator,
     CreateOperatorClass, CreateOperatorFamily, CreatePolicy, CreatePolicyCommand, CreatePolicyType,
-    CreateTable, CreateTrigger, CreateView, Deduplicate, DeferrableInitial, DistStyle,
-    DropBehavior, DropExtension, DropFunction, DropOperator, DropOperatorClass, DropOperatorFamily,
-    DropOperatorSignature, DropPolicy, DropTrigger, ForValues, FunctionReturnType, GeneratedAs,
-    GeneratedExpressionMode, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
-    IdentityPropertyKind, IdentityPropertyOrder, IndexColumn, IndexOption, IndexType,
-    KeyOrIndexDisplay, Msck, NullsDistinctOption, OperatorArgTypes, OperatorClassItem,
-    OperatorFamilyDropItem, OperatorFamilyItem, OperatorOption, OperatorPurpose, Owner, Partition,
-    PartitionBoundValue, ProcedureParam, ReferentialAction, RenameTableNameKind, ReplicaIdentity,
-    TagsColumnOption, TriggerObjectKind, Truncate, UserDefinedTypeCompositeAttributeDef,
-    UserDefinedTypeInternalLength, UserDefinedTypeRangeOption, UserDefinedTypeRepresentation,
-    UserDefinedTypeSqlDefinitionOption, UserDefinedTypeStorage, ViewColumnDef,
+    CreateTable, CreateTextSearch, CreateTrigger, CreateView, Deduplicate, DeferrableInitial,
+    DistStyle, DropBehavior, DropExtension, DropFunction, DropOperator, DropOperatorClass,
+    DropOperatorFamily, DropOperatorSignature, DropPolicy, DropTrigger, ForValues,
+    FunctionReturnType, GeneratedAs, GeneratedExpressionMode, IdentityParameters, IdentityProperty,
+    IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder, IndexColumn,
+    IndexOption, IndexType, KeyOrIndexDisplay, Msck, NullsDistinctOption, OperatorArgTypes,
+    OperatorClassItem, OperatorFamilyDropItem, OperatorFamilyItem, OperatorOption, OperatorPurpose,
+    Owner, Partition, PartitionBoundValue, ProcedureParam, ReferentialAction, RenameTableNameKind,
+    ReplicaIdentity, TagsColumnOption, TextSearchObjectType, TriggerObjectKind, Truncate,
+    UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
+    UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
+    UserDefinedTypeStorage, ViewColumnDef, WithData,
 };
 pub use self::dml::{
     Delete, Insert, Merge, MergeAction, MergeClause, MergeClauseKind, MergeInsertExpr,
-    MergeInsertKind, MergeUpdateExpr, MultiTableInsertIntoClause, MultiTableInsertType,
-    MultiTableInsertValue, MultiTableInsertValues, MultiTableInsertWhenClause, OutputClause,
-    Update,
+    MergeInsertKind, MergeUpdateExpr, MergeUpdateKind, MultiTableInsertIntoClause,
+    MultiTableInsertType, MultiTableInsertValue, MultiTableInsertValues,
+    MultiTableInsertWhenClause, OutputClause, Update,
 };
 pub use self::operator::{BinaryOperator, UnaryOperator};
 pub use self::query::{
@@ -99,7 +103,7 @@ pub use self::query::{
     JsonTableNestedColumn, LateralView, LimitClause, LockClause, LockType, MatchRecognizePattern,
     MatchRecognizeSymbol, Measure, NamedWindowDefinition, NamedWindowExpr, NonBlock, Offset,
     OffsetRows, OpenJsonTableColumn, OrderBy, OrderByExpr, OrderByKind, OrderByOptions,
-    PipeOperator, PivotValueSource, ProjectionSelect, Query, RenameSelectItem,
+    OrderBySort, PipeOperator, PivotValueSource, ProjectionSelect, Query, RenameSelectItem,
     RepetitionQuantifier, ReplaceSelectElement, ReplaceSelectItem, RowsPerMatch, Select,
     SelectFlavor, SelectInto, SelectItem, SelectItemQualifiedWildcardKind, SelectModifiers,
     SetExpr, SetOperator, SetQuantifier, Setting, SymbolDefinition, Table, TableAlias,
@@ -138,8 +142,9 @@ mod dml;
 pub mod helpers;
 pub mod table_constraints;
 pub use table_constraints::{
-    CheckConstraint, ConstraintUsingIndex, ForeignKeyConstraint, FullTextOrSpatialConstraint,
-    IndexConstraint, PrimaryKeyConstraint, TableConstraint, UniqueConstraint,
+    CheckConstraint, ConstraintUsingIndex, ExcludeConstraint, ExcludeConstraintElement,
+    ExcludeConstraintOperator, ForeignKeyConstraint, FullTextOrSpatialConstraint, IndexConstraint,
+    PrimaryKeyConstraint, TableConstraint, UniqueConstraint,
 };
 mod operator;
 mod query;
@@ -242,7 +247,6 @@ impl<T> DerefMut for Parens<T> {
 /// An identifier, decomposed into its value or character data and the quote style.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct Ident {
     /// The value of the identifier without quotes.
     pub value: String,
@@ -385,6 +389,22 @@ impl fmt::Display for Ident {
             None => f.write_str(&self.value),
             _ => panic!("unexpected quote style"),
         }
+    }
+}
+
+#[cfg(feature = "visitor")]
+impl Visit for Ident {
+    fn visit<V: Visitor>(&self, visitor: &mut V) -> ControlFlow<V::Break> {
+        visitor.pre_visit_ident(self)?;
+        visitor.post_visit_ident(self)
+    }
+}
+
+#[cfg(feature = "visitor")]
+impl VisitMut for Ident {
+    fn visit<V: VisitorMut>(&mut self, visitor: &mut V) -> ControlFlow<V::Break> {
+        visitor.pre_visit_ident(self)?;
+        visitor.post_visit_ident(self)
     }
 }
 
@@ -928,6 +948,17 @@ pub enum Expr {
     IsDistinctFrom(Box<Expr>, Box<Expr>),
     /// `IS NOT DISTINCT FROM` operator
     IsNotDistinctFrom(Box<Expr>, Box<Expr>),
+    /// `<expr> IS [NOT] JSON [VALUE|SCALAR|ARRAY|OBJECT] [WITH|WITHOUT UNIQUE [KEYS]]`
+    IsJson {
+        /// Expression being tested.
+        expr: Box<Expr>,
+        /// Optional JSON shape constraint.
+        kind: Option<JsonPredicateType>,
+        /// Optional duplicate-key handling constraint for JSON objects.
+        unique_keys: Option<JsonKeyUniqueness>,
+        /// `true` when `NOT` is present.
+        negated: bool,
+    },
     /// `<expr> IS [ NOT ] [ form ] NORMALIZED`
     IsNormalized {
         /// Expression being tested.
@@ -1090,12 +1121,6 @@ pub enum Expr {
         expr: Box<Expr>,
         /// Target data type.
         data_type: DataType,
-        /// [MySQL] allows CAST(... AS type ARRAY) in functional index definitions for InnoDB
-        /// multi-valued indices. It's not really a datatype, and is only allowed in `CAST` in key
-        /// specifications, so it's a flag here.
-        ///
-        /// [MySQL]: https://dev.mysql.com/doc/refman/8.4/en/cast-functions.html#function_cast
-        array: bool,
         /// Optional CAST(string_expression AS type FORMAT format_string_expression) as used by [BigQuery]
         ///
         /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/format-elements#formatting_syntax
@@ -1285,13 +1310,12 @@ pub enum Expr {
         /// Struct field definitions.
         fields: Vec<StructField>,
     },
-    /// `BigQuery` specific: An named expression in a typeless struct [1]
+    /// A named expression: `1 AS A`. Used in `BigQuery` typeless structs [1]
+    /// and in aliased function arguments, e.g. `XMLFOREST(a AS x)` in
+    /// PostgreSQL [2].
     ///
-    /// Syntax
-    /// ```sql
-    /// 1 AS A
-    /// ```
     /// [1]: https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#struct_type
+    /// [2]: https://www.postgresql.org/docs/current/functions-xml.html#FUNCTIONS-PRODUCING-XML-XMLFOREST
     Named {
         /// The expression being named.
         expr: Box<Expr>,
@@ -1737,6 +1761,25 @@ impl fmt::Display for Expr {
             Expr::IsNotNull(ast) => write!(f, "{ast} IS NOT NULL"),
             Expr::IsUnknown(ast) => write!(f, "{ast} IS UNKNOWN"),
             Expr::IsNotUnknown(ast) => write!(f, "{ast} IS NOT UNKNOWN"),
+            Expr::IsJson {
+                expr,
+                kind,
+                unique_keys,
+                negated,
+            } => {
+                write!(f, "{expr} IS ")?;
+                if *negated {
+                    write!(f, "NOT ")?;
+                }
+                write!(f, "JSON")?;
+                if let Some(kind) = kind {
+                    write!(f, " {kind}")?;
+                }
+                if let Some(unique_keys) = unique_keys {
+                    write!(f, " {unique_keys}")?;
+                }
+                Ok(())
+            }
             Expr::InList {
                 expr,
                 list,
@@ -1853,16 +1896,10 @@ impl fmt::Display for Expr {
                 negated,
             } => {
                 let not_ = if *negated { "NOT " } else { "" };
-                if form.is_none() {
-                    write!(f, "{expr} IS {not_}NORMALIZED")
+                if let Some(form) = form {
+                    write!(f, "{} IS {}{} NORMALIZED", expr, not_, form)
                 } else {
-                    write!(
-                        f,
-                        "{} IS {}{} NORMALIZED",
-                        expr,
-                        not_,
-                        form.as_ref().unwrap()
-                    )
+                    write!(f, "{expr} IS {not_}NORMALIZED")
                 }
             }
             Expr::SimilarTo {
@@ -1963,14 +2000,10 @@ impl fmt::Display for Expr {
                 kind,
                 expr,
                 data_type,
-                array,
                 format,
             } => match kind {
                 CastKind::Cast => {
                     write!(f, "CAST({expr} AS {data_type}")?;
-                    if *array {
-                        write!(f, " ARRAY")?;
-                    }
                     if let Some(format) = format {
                         write!(f, " FORMAT {format}")?;
                     }
@@ -3761,6 +3794,10 @@ pub enum Statement {
     /// ```
     /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-createopclass.html)
     CreateOperatorClass(CreateOperatorClass),
+    /// A `CREATE TEXT SEARCH` statement.
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/textsearch-intro.html)
+    CreateTextSearch(CreateTextSearch),
     /// ```sql
     /// ALTER TABLE
     /// ```
@@ -3825,6 +3862,10 @@ pub enum Statement {
     /// ```
     /// See [PostgreSQL](https://www.postgresql.org/docs/current/sql-alteropclass.html)
     AlterOperatorClass(AlterOperatorClass),
+    /// An `ALTER TEXT SEARCH` statement.
+    ///
+    /// See [PostgreSQL](https://www.postgresql.org/docs/current/textsearch-configuration.html)
+    AlterTextSearch(AlterTextSearch),
     /// ```sql
     /// ALTER ROLE
     /// ```
@@ -4335,6 +4376,8 @@ pub enum Statement {
     CreateSchema {
         /// `<schema name> | AUTHORIZATION <schema authorization identifier>  | <schema name>  AUTHORIZATION <schema authorization identifier>`
         schema_name: SchemaName,
+        /// `true` when `OR REPLACE` was present.
+        or_replace: bool,
         /// `true` when `IF NOT EXISTS` was present.
         if_not_exists: bool,
         /// Schema properties.
@@ -4510,6 +4553,36 @@ pub enum Statement {
         /// Optional comment.
         comment: Option<String>,
     },
+    /// ```sql
+    /// CREATE [ OR REPLACE ] [ { TEMP | TEMPORARY | VOLATILE } ] FILE FORMAT [ IF NOT EXISTS ] <name>
+    ///   [ TYPE = { CSV | JSON | AVRO | ORC | PARQUET | XML } [ formatTypeOptions ] ]
+    ///   [ COMMENT = '<string_literal>' ]
+    /// ```
+    /// See <https://docs.snowflake.com/en/sql-reference/sql/create-file-format>
+    CreateFileFormat {
+        /// `OR REPLACE` flag.
+        or_replace: bool,
+        /// Whether file format is temporary.
+        temporary: bool,
+        /// Whether file format is volatile.
+        volatile: bool,
+        /// `IF NOT EXISTS` flag.
+        if_not_exists: bool,
+        /// File format name.
+        name: ObjectName,
+        /// Format type options (e.g. `TYPE`, `FIELD_DELIMITER`, `COMPRESSION`, ...).
+        options: KeyValueOptions,
+        /// Optional comment.
+        comment: Option<String>,
+    },
+    /// ```sql
+    /// CREATE [ OR REPLACE ] WAREHOUSE [ IF NOT EXISTS ] <name>
+    ///   [ [ WITH ] <property> = <value> [ ... ] ]
+    /// ```
+    /// Snowflake-specific statement to create a virtual warehouse.
+    ///
+    /// See <https://docs.snowflake.com/en/sql-reference/sql/create-warehouse>
+    CreateWarehouse(CreateWarehouse),
     /// ```sql
     /// ASSERT <condition> [AS <message>]
     /// ```
@@ -4876,6 +4949,20 @@ pub enum Statement {
     /// Snowflake `LIST`
     /// See: <https://docs.snowflake.com/en/sql-reference/sql/list>
     List(FileStagingCommand),
+    /// Snowflake `PUT`
+    /// ```sql
+    /// PUT 'file://<path>' <internalStage> [ <option> = <value> ... ]
+    /// ```
+    /// Options include `PARALLEL`, `AUTO_COMPRESS`, `SOURCE_COMPRESSION`, `OVERWRITE`.
+    /// See: <https://docs.snowflake.com/en/sql-reference/sql/put>
+    Put {
+        /// Local source URI as written in the statement, e.g. `file:///tmp/data.csv`.
+        source: String,
+        /// Target internal stage (e.g. `@mystage`, `@~`, `@%table`).
+        stage: ObjectName,
+        /// Trailing options (`PARALLEL=4`, `AUTO_COMPRESS=TRUE`, ...).
+        options: KeyValueOptions,
+    },
     /// Snowflake `REMOVE`
     /// See: <https://docs.snowflake.com/en/sql-reference/sql/remove>
     Remove(FileStagingCommand),
@@ -5600,6 +5687,7 @@ impl fmt::Display for Statement {
                 create_operator_family.fmt(f)
             }
             Statement::CreateOperatorClass(create_operator_class) => create_operator_class.fmt(f),
+            Statement::CreateTextSearch(create_text_search) => create_text_search.fmt(f),
             Statement::AlterTable(alter_table) => write!(f, "{alter_table}"),
             Statement::AlterIndex { name, operation } => {
                 write!(f, "ALTER INDEX {name} {operation}")
@@ -5631,6 +5719,7 @@ impl fmt::Display for Statement {
             Statement::AlterOperatorClass(alter_operator_class) => {
                 write!(f, "{alter_operator_class}")
             }
+            Statement::AlterTextSearch(alter_text_search) => write!(f, "{alter_text_search}"),
             Statement::AlterRole { name, operation } => {
                 write!(f, "ALTER ROLE {name} {operation}")
             }
@@ -5792,8 +5881,8 @@ impl fmt::Display for Statement {
                     write!(f, " SESSION")?;
                 }
                 write!(f, " STATUS")?;
-                if filter.is_some() {
-                    write!(f, " {}", filter.as_ref().unwrap())?;
+                if let Some(filter) = filter {
+                    write!(f, " {}", filter)?;
                 }
                 Ok(())
             }
@@ -5810,8 +5899,8 @@ impl fmt::Display for Statement {
                     write!(f, " SESSION")?;
                 }
                 write!(f, " VARIABLES")?;
-                if filter.is_some() {
-                    write!(f, " {}", filter.as_ref().unwrap())?;
+                if let Some(filter) = filter {
+                    write!(f, " {}", filter)?;
                 }
                 Ok(())
             }
@@ -6010,6 +6099,7 @@ impl fmt::Display for Statement {
             }
             Statement::CreateSchema {
                 schema_name,
+                or_replace,
                 if_not_exists,
                 with,
                 options,
@@ -6018,7 +6108,8 @@ impl fmt::Display for Statement {
             } => {
                 write!(
                     f,
-                    "CREATE SCHEMA {if_not_exists}{name}",
+                    "CREATE {or_replace}SCHEMA {if_not_exists}{name}",
+                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
                     if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
                     name = schema_name
                 )?;
@@ -6223,11 +6314,37 @@ impl fmt::Display for Statement {
                 if !copy_options.options.is_empty() {
                     write!(f, " COPY_OPTIONS=({copy_options})")?;
                 }
-                if comment.is_some() {
-                    write!(f, " COMMENT='{}'", comment.as_ref().unwrap())?;
+                if let Some(comment) = comment {
+                    write!(f, " COMMENT='{}'", comment)?;
                 }
                 Ok(())
             }
+            Statement::CreateFileFormat {
+                or_replace,
+                temporary,
+                volatile,
+                if_not_exists,
+                name,
+                options,
+                comment,
+            } => {
+                write!(
+                    f,
+                    "CREATE {or_replace}{temp}{volatile}FILE FORMAT {if_not_exists}{name}",
+                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
+                    temp = if *temporary { "TEMPORARY " } else { "" },
+                    volatile = if *volatile { "VOLATILE " } else { "" },
+                    if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
+                )?;
+                if !options.options.is_empty() {
+                    write!(f, " {options}")?;
+                }
+                if let Some(comment) = comment {
+                    write!(f, " COMMENT='{}'", comment)?;
+                }
+                Ok(())
+            }
+            Statement::CreateWarehouse(s) => write!(f, "{s}"),
             Statement::CopyIntoSnowflake {
                 kind,
                 into,
@@ -6311,12 +6428,11 @@ impl fmt::Display for Statement {
             }
             Statement::Pragma { name, value, is_eq } => {
                 write!(f, "PRAGMA {name}")?;
-                if value.is_some() {
-                    let val = value.as_ref().unwrap();
+                if let Some(value) = value {
                     if *is_eq {
-                        write!(f, " = {val}")?;
+                        write!(f, " = {value}")?;
                     } else {
-                        write!(f, "({val})")?;
+                        write!(f, "({value})")?;
                     }
                 }
                 Ok(())
@@ -6430,6 +6546,17 @@ impl fmt::Display for Statement {
             Statement::WaitFor(s) => write!(f, "{s}"),
             Statement::Return(r) => write!(f, "{r}"),
             Statement::List(command) => write!(f, "LIST {command}"),
+            Statement::Put {
+                source,
+                stage,
+                options,
+            } => {
+                write!(f, "PUT '{source}' {stage}")?;
+                if !options.options.is_empty() {
+                    write!(f, " {options}")?;
+                }
+                Ok(())
+            }
             Statement::Remove(command) => write!(f, "REMOVE {command}"),
             Statement::ExportData(e) => write!(f, "{e}"),
             Statement::CreateUser(s) => write!(f, "{s}"),
@@ -7947,6 +8074,11 @@ pub enum FunctionArgOperator {
     Colon,
     /// function(arg1 VALUE value1)
     Value,
+    /// function(arg1 value1), with no operator between the name and the value,
+    /// as in PostgreSQL `XMLPARSE(DOCUMENT value)`
+    ///
+    /// [PostgreSQL](https://www.postgresql.org/docs/current/datatype-xml.html#DATATYPE-XML-CREATING)
+    Space,
 }
 
 impl fmt::Display for FunctionArgOperator {
@@ -7957,6 +8089,7 @@ impl fmt::Display for FunctionArgOperator {
             FunctionArgOperator::Assignment => f.write_str(":="),
             FunctionArgOperator::Colon => f.write_str(":"),
             FunctionArgOperator::Value => f.write_str("VALUE"),
+            FunctionArgOperator::Space => Ok(()),
         }
     }
 }
@@ -7999,14 +8132,28 @@ impl fmt::Display for FunctionArg {
                 name,
                 arg,
                 operator,
-            } => write!(f, "{name} {operator} {arg}"),
+            } => fmt_named_function_arg(f, name, operator, arg),
             FunctionArg::ExprNamed {
                 name,
                 arg,
                 operator,
-            } => write!(f, "{name} {operator} {arg}"),
+            } => fmt_named_function_arg(f, name, operator, arg),
             FunctionArg::Unnamed(unnamed_arg) => write!(f, "{unnamed_arg}"),
         }
+    }
+}
+
+/// `FunctionArgOperator::Space` has no token of its own, so the name and the
+/// value are separated by a single space instead.
+fn fmt_named_function_arg(
+    f: &mut fmt::Formatter,
+    name: &impl fmt::Display,
+    operator: &FunctionArgOperator,
+    arg: &FunctionArgExpr,
+) -> fmt::Result {
+    match operator {
+        FunctionArgOperator::Space => write!(f, "{name} {arg}"),
+        _ => write!(f, "{name} {operator} {arg}"),
     }
 }
 
@@ -8251,6 +8398,13 @@ pub enum FunctionArgumentClause {
     ///
     /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/navigation_functions#first_value
     IgnoreOrRespectNulls(NullTreatment),
+    /// The inline `WHERE` filter clause on an aggregate call, e.g.
+    /// `COUNT(* WHERE cond)` / `SUM(x WHERE cond)` / `ARRAY_AGG(x WHERE cond ORDER BY ..)`.
+    /// Popularized by [GoogleSQL]; equivalent to the standard `AGG(x) FILTER (WHERE cond)`.
+    /// Accepted for all dialects since `WHERE` cannot otherwise begin a function argument.
+    ///
+    /// [GoogleSQL]: https://cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions#grouping_and_filtering
+    Where(Expr),
     /// Specifies the the ordering for some ordered set aggregates, e.g. `ARRAY_AGG` on [BigQuery].
     ///
     /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions#array_agg
@@ -8292,6 +8446,7 @@ impl fmt::Display for FunctionArgumentClause {
             FunctionArgumentClause::IgnoreOrRespectNulls(null_treatment) => {
                 write!(f, "{null_treatment}")
             }
+            FunctionArgumentClause::Where(expr) => write!(f, "WHERE {expr}"),
             FunctionArgumentClause::OrderBy(order_by) => {
                 write!(f, "ORDER BY {}", display_comma_separated(order_by))
             }
@@ -8385,6 +8540,52 @@ pub enum AnalyzeFormat {
     TRADITIONAL,
     /// Tree-style explain output.
     TREE,
+}
+
+/// Optional type constraint for `IS JSON`.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum JsonPredicateType {
+    /// `VALUE` form.
+    Value,
+    /// `SCALAR` form.
+    Scalar,
+    /// `ARRAY` form.
+    Array,
+    /// `OBJECT` form.
+    Object,
+}
+
+impl fmt::Display for JsonPredicateType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JsonPredicateType::Value => write!(f, "VALUE"),
+            JsonPredicateType::Scalar => write!(f, "SCALAR"),
+            JsonPredicateType::Array => write!(f, "ARRAY"),
+            JsonPredicateType::Object => write!(f, "OBJECT"),
+        }
+    }
+}
+
+/// Optional duplicate-key handling for `IS JSON`.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum JsonKeyUniqueness {
+    /// `WITH UNIQUE KEYS` form.
+    WithUniqueKeys,
+    /// `WITHOUT UNIQUE KEYS` form.
+    WithoutUniqueKeys,
+}
+
+impl fmt::Display for JsonKeyUniqueness {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JsonKeyUniqueness::WithUniqueKeys => write!(f, "WITH UNIQUE KEYS"),
+            JsonKeyUniqueness::WithoutUniqueKeys => write!(f, "WITHOUT UNIQUE KEYS"),
+        }
+    }
 }
 
 impl fmt::Display for AnalyzeFormat {
@@ -8536,6 +8737,8 @@ pub enum ObjectType {
     User,
     /// A stream.
     Stream,
+    /// A warehouse.
+    Warehouse,
 }
 
 impl fmt::Display for ObjectType {
@@ -8554,6 +8757,7 @@ impl fmt::Display for ObjectType {
             ObjectType::Type => "TYPE",
             ObjectType::User => "USER",
             ObjectType::Stream => "STREAM",
+            ObjectType::Warehouse => "WAREHOUSE",
         })
     }
 }
@@ -11559,6 +11763,45 @@ impl fmt::Display for CreateUser {
     }
 }
 
+/// ```sql
+/// CREATE [ OR REPLACE ] WAREHOUSE [ IF NOT EXISTS ] <name>
+///   [ [ WITH ] <property> = <value> [ ... ] ]
+/// ```
+/// Snowflake-specific statement to create a virtual warehouse.
+///
+/// See <https://docs.snowflake.com/en/sql-reference/sql/create-warehouse>
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct CreateWarehouse {
+    /// `OR REPLACE` flag.
+    pub or_replace: bool,
+    /// `IF NOT EXISTS` flag.
+    pub if_not_exists: bool,
+    /// Warehouse name.
+    pub name: ObjectName,
+    /// Warehouse properties and parameters (e.g. `WAREHOUSE_SIZE = 'XSMALL'`).
+    pub options: KeyValueOptions,
+}
+
+impl fmt::Display for CreateWarehouse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CREATE")?;
+        if self.or_replace {
+            write!(f, " OR REPLACE")?;
+        }
+        write!(f, " WAREHOUSE")?;
+        if self.if_not_exists {
+            write!(f, " IF NOT EXISTS")?;
+        }
+        write!(f, " {}", self.name)?;
+        if !self.options.options.is_empty() {
+            write!(f, " {}", self.options)?;
+        }
+        Ok(())
+    }
+}
+
 /// Modifies the properties of a user
 ///
 /// [Snowflake Syntax:](https://docs.snowflake.com/en/sql-reference/sql/alter-user)
@@ -11799,7 +12042,7 @@ impl fmt::Display for AlterUser {
         let has_props = !self.set_props.options.is_empty();
         if has_props {
             write!(f, " SET")?;
-            write!(f, " {}", &self.set_props)?;
+            write!(f, " {}", self.set_props)?;
         }
         if !self.unset_props.is_empty() {
             write!(f, " UNSET {}", display_comma_separated(&self.unset_props))?;
@@ -12089,13 +12332,16 @@ pub enum Reset {
     /// Resets all session parameters to their default values.
     ALL,
 
+    /// Resets session authorization to the session user.
+    SessionAuthorization,
+
     /// Resets a specific session parameter to its default value.
     ConfigurationParameter(ObjectName),
 }
 
 /// Resets a session parameter to its default value.
 /// ```sql
-/// RESET { ALL | <configuration_parameter> }
+/// RESET { ALL | SESSION AUTHORIZATION | <configuration_parameter> }
 /// ```
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -12153,7 +12399,8 @@ impl fmt::Display for OptimizerHint {
                 f.write_str(prefix)?;
                 f.write_str(&self.prefix)?;
                 f.write_str("+")?;
-                f.write_str(&self.text)
+                f.write_str(&self.text)?;
+                f.write_str("\n")
             }
             OptimizerHintStyle::MultiLine => {
                 f.write_str("/*")?;
@@ -12170,6 +12417,7 @@ impl fmt::Display for ResetStatement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.reset {
             Reset::ALL => write!(f, "RESET ALL"),
+            Reset::SessionAuthorization => write!(f, "RESET SESSION AUTHORIZATION"),
             Reset::ConfigurationParameter(param) => write!(f, "RESET {}", param),
         }
     }
@@ -12337,6 +12585,12 @@ impl From<CreateOperatorClass> for Statement {
     }
 }
 
+impl From<CreateTextSearch> for Statement {
+    fn from(c: CreateTextSearch) -> Self {
+        Self::CreateTextSearch(c)
+    }
+}
+
 impl From<AlterSchema> for Statement {
     fn from(a: AlterSchema) -> Self {
         Self::AlterSchema(a)
@@ -12376,6 +12630,12 @@ impl From<AlterOperatorFamily> for Statement {
 impl From<AlterOperatorClass> for Statement {
     fn from(a: AlterOperatorClass) -> Self {
         Self::AlterOperatorClass(a)
+    }
+}
+
+impl From<AlterTextSearch> for Statement {
+    fn from(a: AlterTextSearch) -> Self {
+        Self::AlterTextSearch(a)
     }
 }
 
@@ -12496,6 +12756,12 @@ impl From<ExportData> for Statement {
 impl From<CreateUser> for Statement {
     fn from(c: CreateUser) -> Self {
         Self::CreateUser(c)
+    }
+}
+
+impl From<CreateWarehouse> for Statement {
+    fn from(c: CreateWarehouse) -> Self {
+        Self::CreateWarehouse(c)
     }
 }
 

@@ -1924,6 +1924,7 @@ fn parse_create_table_with_valid_options() {
             Statement::CreateTable(CreateTable {
                 or_replace: false,
                 temporary: false,
+                unlogged: false,
                 external: false,
                 global: None,
                 dynamic: false,
@@ -1999,6 +2000,7 @@ fn parse_create_table_with_valid_options() {
                 with_tags: None,
                 base_location: None,
                 external_volume: None,
+                with_connection: None,
                 catalog: None,
                 catalog_sync: None,
                 storage_serialization_policy: None,
@@ -2013,6 +2015,9 @@ fn parse_create_table_with_valid_options() {
                 distkey: None,
                 sortkey: None,
                 backup: None,
+                multiset: None,
+                fallback: None,
+                with_data: None,
             })
         );
     }
@@ -2117,6 +2122,7 @@ fn parse_create_table_with_identity_column() {
             Statement::CreateTable(CreateTable {
                 or_replace: false,
                 temporary: false,
+                unlogged: false,
                 external: false,
                 global: None,
                 dynamic: false,
@@ -2173,6 +2179,7 @@ fn parse_create_table_with_identity_column() {
                 with_tags: None,
                 base_location: None,
                 external_volume: None,
+                with_connection: None,
                 catalog: None,
                 catalog_sync: None,
                 storage_serialization_policy: None,
@@ -2187,6 +2194,9 @@ fn parse_create_table_with_identity_column() {
                 distkey: None,
                 sortkey: None,
                 backup: None,
+                multiset: None,
+                fallback: None,
+                with_data: None,
             }),
         );
     }
@@ -2913,5 +2923,21 @@ fn parse_mssql_money_constants() {
     assert_eq!(
         &Expr::Value(Value::Placeholder("$0".to_string()).with_empty_span()),
         expr_from_projection(only(&select.projection)),
+    );
+}
+
+#[test]
+fn parse_bracket_quoted_function_argument_name() {
+    let Statement::DropFunction(drop) = ms().verified_stmt("DROP FUNCTION f([Role] INT)") else {
+        panic!("expected a DROP FUNCTION statement");
+    };
+    assert_eq!(
+        drop.func_desc[0].args,
+        Some(vec![OperateFunctionArg {
+            mode: None,
+            name: Some(Ident::with_quote('[', "Role")),
+            data_type: Int(None),
+            default_expr: None,
+        }])
     );
 }
