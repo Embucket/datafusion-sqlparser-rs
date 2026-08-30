@@ -273,7 +273,7 @@ impl fmt::Display for Value {
             Value::DollarQuotedString(v) => write!(f, "{v}"),
             Value::EscapedStringLiteral(v) => write!(f, "E'{}'", escape_escaped_string(v)),
             Value::UnicodeStringLiteral(v) => write!(f, "U&'{}'", escape_unicode_string(v)),
-            Value::NationalStringLiteral(v) => write!(f, "N'{}'", escape_single_quote_string(v)),
+            Value::NationalStringLiteral(v) => write!(f, "N'{v}'"),
             Value::QuoteDelimitedStringLiteral(v) => v.fmt(f),
             Value::NationalQuoteDelimitedStringLiteral(v) => write!(f, "N{v}"),
             Value::HexStringLiteral(v) => write!(f, "X'{v}'"),
@@ -577,8 +577,7 @@ impl fmt::Display for EscapeQuotedString<'_> {
                             // The quote is not escaped.
                             // Including idx in the range, so the quote at idx will be printed twice:
                             // in this call to write_str() and in the next one.
-                            let end_idx = idx + ch.len_utf8();
-                            f.write_str(&self.string[start_idx..end_idx])?;
+                            f.write_str(&self.string[start_idx..=idx])?;
                             start_idx = idx;
                         }
                     }
@@ -707,13 +706,4 @@ impl fmt::Display for TrimWhereField {
             Trailing => "TRAILING",
         })
     }
-}
-
-#[cfg(test)]
-#[test]
-fn test_escape_quoted_string_with_multibyte_quote_char() {
-    assert_eq!(
-        format!("{}", escape_quoted_string("a🦀b🦀c", '🦀')),
-        "a🦀🦀b🦀🦀c"
-    );
 }

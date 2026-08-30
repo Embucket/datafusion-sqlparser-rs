@@ -388,6 +388,7 @@ fn test_duckdb_specific_int_types() {
                     Value::Number("123".parse().unwrap(), false).with_empty_span()
                 )),
                 data_type: data_type.clone(),
+                array: false,
                 format: None,
             },
             expr_from_projection(&select.projection[0])
@@ -702,7 +703,6 @@ fn test_duckdb_union_datatype() {
         Statement::CreateTable(CreateTable {
             or_replace: Default::default(),
             temporary: Default::default(),
-            unlogged: Default::default(),
             external: Default::default(),
             global: Default::default(),
             if_not_exists: Default::default(),
@@ -780,7 +780,6 @@ fn test_duckdb_union_datatype() {
             with_tags: Default::default(),
             base_location: Default::default(),
             external_volume: Default::default(),
-            with_connection: Default::default(),
             catalog: Default::default(),
             catalog_sync: Default::default(),
             storage_serialization_policy: Default::default(),
@@ -795,9 +794,6 @@ fn test_duckdb_union_datatype() {
             distkey: Default::default(),
             sortkey: Default::default(),
             backup: Default::default(),
-            multiset: Default::default(),
-            fallback: Default::default(),
-            with_data: Default::default(),
         }),
         stmt
     );

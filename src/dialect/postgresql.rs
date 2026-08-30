@@ -161,10 +161,6 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
-    fn supports_alter_user_as_alter_role(&self) -> bool {
-        true
-    }
-
     fn prec_value(&self, prec: Precedence) -> u8 {
         match prec {
             Precedence::Period => PERIOD_PREC,
@@ -209,11 +205,6 @@ impl Dialect for PostgreSqlDialect {
     /// see <https://www.postgresql.org/docs/current/sql-unlisten.html>
     /// see <https://www.postgresql.org/docs/current/sql-notify.html>
     fn supports_listen_notify(&self) -> bool {
-        true
-    }
-
-    /// see <https://www.postgresql.org/docs/current/sql-createtable.html#SQL-CREATETABLE-EXCLUDE>
-    fn supports_exclude_constraint(&self) -> bool {
         true
     }
 
@@ -287,22 +278,12 @@ impl Dialect for PostgreSqlDialect {
         true
     }
 
-    fn supports_order_by_using_operator(&self) -> bool {
-        true
-    }
-
     fn supports_set_names(&self) -> bool {
         true
     }
 
     fn supports_alter_column_type_using(&self) -> bool {
         true
-    }
-
-    /// PostgreSQL supports right-deep join chains: `t0 JOIN t1 JOIN t2 ON c1 ON c2`
-    /// See: <https://www.postgresql.org/docs/current/queries-table-expressions.html#QUERIES-JOIN>
-    fn supports_left_associative_joins_without_parens(&self) -> bool {
-        false
     }
 
     /// Postgres supports `NOTNULL` as an alias for `IS NOT NULL`
@@ -335,10 +316,6 @@ impl Dialect for PostgreSqlDialect {
     }
 
     fn supports_xml_expressions(&self) -> bool {
-        true
-    }
-
-    fn supports_aliased_function_args(&self) -> bool {
         true
     }
 

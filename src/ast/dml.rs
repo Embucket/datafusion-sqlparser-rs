@@ -649,14 +649,6 @@ pub enum MergeInsertKind {
     /// ```
     /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
     Row,
-    /// The insert expression uses the `*` wildcard to insert all columns.
-    ///
-    /// Example:
-    /// ```sql
-    /// INSERT *
-    /// ```
-    /// [Databricks](https://docs.databricks.com/en/sql/language-manual/delta-merge-into.html)
-    Wildcard,
 }
 
 impl Display for MergeInsertKind {
@@ -667,9 +659,6 @@ impl Display for MergeInsertKind {
             }
             MergeInsertKind::Row => {
                 write!(f, "ROW")
-            }
-            MergeInsertKind::Wildcard => {
-                write!(f, "*")
             }
         }
     }
@@ -721,62 +710,25 @@ impl Display for MergeInsertExpr {
     }
 }
 
-/// The kind of update used within a `MERGE` statement.
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-pub enum MergeUpdateKind {
-    /// Standard update with explicit assignments.
-    ///
-    /// Example:
-    /// ```sql
-    /// UPDATE SET quantity = source.quantity, name = source.name
-    /// ```
-    Set(Vec<Assignment>),
-    /// The `*` wildcard to update all columns from the source.
-    ///
-    /// Example:
-    /// ```sql
-    /// UPDATE SET *
-    /// ```
-    /// [Databricks](https://docs.databricks.com/en/sql/language-manual/delta-merge-into.html)
-    Wildcard,
-}
-
-impl Display for MergeUpdateKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            MergeUpdateKind::Set(assignments) => {
-                write!(f, "SET {}", display_comma_separated(assignments))
-            }
-            MergeUpdateKind::Wildcard => {
-                write!(f, "SET *")
-            }
-        }
-    }
-}
-
 /// The expression used to update rows within a `MERGE` statement.
 ///
 /// Examples
 /// ```sql
 /// UPDATE SET quantity = T.quantity + S.quantity
-/// UPDATE SET *
 /// ```
 ///
 /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/merge)
 /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
 /// [Oracle](https://docs.oracle.com/en/database/oracle/oracle-database/21/sqlrf/MERGE.html)
-/// [Databricks](https://docs.databricks.com/en/sql/language-manual/delta-merge-into.html)
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 pub struct MergeUpdateExpr {
     /// The `UPDATE` token that starts the sub-expression.
     pub update_token: AttachedToken,
-    /// The kind of update: explicit assignments or `*` shorthand.
-    pub kind: MergeUpdateKind,
-    /// `where_clause` for the update (Oracle specific)
+    /// The update assiment expressions
+    pub assignments: Vec<Assignment>,
+    /// `where_clause` for the update (Oralce specific)
     pub update_predicate: Option<Expr>,
     /// `delete_clause` for the update "delete where" (Oracle specific)
     pub delete_predicate: Option<Expr>,
@@ -784,7 +736,7 @@ pub struct MergeUpdateExpr {
 
 impl Display for MergeUpdateExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.kind)?;
+        write!(f, "SET {}", display_comma_separated(&self.assignments))?;
         if let Some(predicate) = self.update_predicate.as_ref() {
             write!(f, " WHERE {predicate}")?;
         }

@@ -62,11 +62,11 @@ pub(crate) fn derive_visit(
             fn visit<V: sqlparser::ast::#visitor_trait>(
                 &#modifier self,
                 visitor: &mut V
-            ) -> ::core::ops::ControlFlow<V::Break> {
+            ) -> ::std::ops::ControlFlow<V::Break> {
                 #pre_visit
                 #children
                 #post_visit
-                ::core::ops::ControlFlow::Continue(())
+                ::std::ops::ControlFlow::Continue(())
             }
         }
     };

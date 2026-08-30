@@ -23,8 +23,7 @@
 use sqlparser::ast::{
     ClusteredBy, CommentDef, CreateFunction, CreateFunctionBody, CreateFunctionUsing, CreateTable,
     Expr, Function, FunctionArgumentList, FunctionArguments, Ident, ObjectName, OrderByExpr,
-    OrderByOptions, OrderBySort, SelectItem, Set, Statement, TableFactor, UnaryOperator, Use,
-    Value,
+    OrderByOptions, SelectItem, Set, Statement, TableFactor, UnaryOperator, Use, Value,
 };
 use sqlparser::dialect::{AnsiDialect, GenericDialect, HiveDialect};
 use sqlparser::parser::ParserError;
@@ -172,7 +171,7 @@ fn create_table_with_clustered_by() {
                         OrderByExpr {
                             expr: Expr::Identifier(Ident::new("a")),
                             options: OrderByOptions {
-                                sort: Some(OrderBySort::Asc),
+                                asc: Some(true),
                                 nulls_first: None,
                             },
                             with_fill: None,
@@ -180,7 +179,7 @@ fn create_table_with_clustered_by() {
                         OrderByExpr {
                             expr: Expr::Identifier(Ident::new("b")),
                             options: OrderByOptions {
-                                sort: Some(OrderBySort::Desc),
+                                asc: Some(false),
                                 nulls_first: None,
                             },
                             with_fill: None,
@@ -560,13 +559,6 @@ fn test_tample_sample() {
     hive().verified_stmt("SELECT * FROM source TABLESAMPLE (100M) AS s");
     hive().verified_stmt("SELECT * FROM source TABLESAMPLE (0.1 PERCENT) AS s");
     hive().verified_stmt("SELECT * FROM source TABLESAMPLE (10 ROWS)");
-}
-
-#[test]
-fn parse_create_table_with_map_column_comment() {
-    hive().verified_stmt(
-        "CREATE TABLE target (kv_map MAP<STRING, STRING> COMMENT 'kv col comment') COMMENT 'this is table comment'",
-    );
 }
 
 fn hive() -> TestedDialects {
