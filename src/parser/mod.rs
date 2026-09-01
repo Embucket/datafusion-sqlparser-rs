@@ -183,6 +183,15 @@ pub enum WildcardExpr {
     Wildcard,
 }
 
+fn wildcard_options_are_empty(options: &WildcardAdditionalOptions) -> bool {
+    options.opt_ilike.is_none()
+        && options.opt_exclude.is_none()
+        && options.opt_except.is_none()
+        && options.opt_replace.is_none()
+        && options.opt_rename.is_none()
+        && options.opt_alias.is_none()
+}
+
 impl From<TokenizerError> for ParserError {
     fn from(e: TokenizerError) -> Self {
         ParserError::TokenizerError(e.to_string())
@@ -18271,6 +18280,24 @@ impl<'a> Parser<'a> {
 
     /// Parse a single function argument, handling named and unnamed variants.
     pub fn parse_function_args(&mut self) -> Result<FunctionArg, ParserError> {
+        if self.dialect.supports_select_wildcard_exclude() {
+            if let Some(arg) = self.maybe_parse(|parser| {
+                parser.expect_token(&Token::LParen)?;
+                let Expr::QualifiedWildcard(prefix, token) = parser.parse_wildcard_expr()? else {
+                    return parser.expected_ref("a qualified wildcard", parser.peek_token_ref());
+                };
+                let options = parser.parse_wildcard_additional_options(token.0)?;
+                parser.expect_token(&Token::RParen)?;
+                Ok(if wildcard_options_are_empty(&options) {
+                    FunctionArgExpr::QualifiedWildcard(prefix)
+                } else {
+                    FunctionArgExpr::QualifiedWildcardWithOptions(prefix, options)
+                })
+            })? {
+                return Ok(FunctionArg::Unnamed(arg));
+            }
+        }
+
         let arg = if self.dialect.supports_named_fn_args_with_expr_name() {
             self.maybe_parse(|p| {
                 let name = p.parse_expr()?;
@@ -18303,15 +18330,20 @@ impl<'a> Parser<'a> {
                 // Support `* EXCLUDE(col1, col2, ...)` inside function calls (e.g. Snowflake's
                 // `HASH(* EXCLUDE(col))`).  Parse the options the same way SELECT items do.
                 let opts = self.parse_wildcard_additional_options(token.0.clone())?;
-                if opts.opt_exclude.is_some()
-                    || opts.opt_except.is_some()
-                    || opts.opt_replace.is_some()
-                    || opts.opt_rename.is_some()
-                    || opts.opt_ilike.is_some()
-                {
+                if !wildcard_options_are_empty(&opts) {
                     FunctionArgExpr::WildcardWithOptions(opts)
                 } else {
                     wildcard_expr.into()
+                }
+            }
+            Expr::QualifiedWildcard(prefix, token)
+                if self.dialect.supports_select_wildcard_exclude() =>
+            {
+                let opts = self.parse_wildcard_additional_options(token.0)?;
+                if wildcard_options_are_empty(&opts) {
+                    FunctionArgExpr::QualifiedWildcard(prefix)
+                } else {
+                    FunctionArgExpr::QualifiedWildcardWithOptions(prefix, opts)
                 }
             }
             other => other.into(),

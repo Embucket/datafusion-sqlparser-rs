@@ -2176,6 +2176,9 @@ impl Spanned for FunctionArgExpr {
             FunctionArgExpr::QualifiedWildcard(object_name) => {
                 union_spans(object_name.0.iter().map(|i| i.span()))
             }
+            FunctionArgExpr::QualifiedWildcardWithOptions(object_name, options) => {
+                union_spans([object_name.span(), options.span()].into_iter())
+            }
             FunctionArgExpr::Wildcard => Span::empty(),
             FunctionArgExpr::WildcardWithOptions(_) => Span::empty(),
         }
