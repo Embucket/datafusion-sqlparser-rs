@@ -1587,6 +1587,22 @@ fn snowflake_and_generic() -> TestedDialects {
 }
 
 #[test]
+fn parse_parenthesized_qualified_wildcard_function_argument() {
+    snowflake().one_statement_parses_to(
+        "SELECT SEARCH((lines.*), 'king') FROM lines",
+        "SELECT SEARCH(lines.*, 'king') FROM lines",
+    );
+    snowflake().one_statement_parses_to(
+        "SELECT SEARCH((lines.* ILIKE '%line'), 'king') FROM lines",
+        "SELECT SEARCH(lines.* ILIKE '%line', 'king') FROM lines",
+    );
+    snowflake().one_statement_parses_to(
+        "SELECT SEARCH((lines.* EXCLUDE character), 'king') FROM lines",
+        "SELECT SEARCH(lines.* EXCLUDE character, 'king') FROM lines",
+    );
+}
+
+#[test]
 fn test_select_wildcard_with_exclude() {
     let select = snowflake_and_generic().verified_only_select("SELECT * EXCLUDE (col_a) FROM data");
     let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
