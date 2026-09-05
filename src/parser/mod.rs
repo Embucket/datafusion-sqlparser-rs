@@ -4099,13 +4099,21 @@ impl<'a> Parser<'a> {
                 ),
             }
         } else if Token::DoubleColon == *tok {
-            Ok(Expr::Cast {
+            let cast = Expr::Cast {
                 kind: CastKind::DoubleColon,
                 expr: Box::new(expr),
                 data_type: self.parse_data_type()?,
                 array: false,
                 format: None,
-            })
+            };
+            if dialect_of!(self is SnowflakeDialect) && self.parse_keyword(Keyword::COLLATE) {
+                Ok(Expr::Collate {
+                    expr: Box::new(cast),
+                    collation: self.parse_object_name(false)?,
+                })
+            } else {
+                Ok(cast)
+            }
         } else if Token::ExclamationMark == *tok && self.dialect.supports_factorial_operator() {
             Ok(Expr::UnaryOp {
                 op: UnaryOperator::PGPostfixFactorial,
