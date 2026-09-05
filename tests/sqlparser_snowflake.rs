@@ -5106,6 +5106,18 @@ fn test_timestamp_ntz_with_precision() {
 }
 
 #[test]
+fn test_collate_after_double_colon_cast() {
+    let select = snowflake().verified_only_select("SELECT 'ñ'::VARCHAR COLLATE 'es'");
+    match expr_from_projection(only(&select.projection)) {
+        Expr::Collate { expr, collation } => {
+            assert_eq!(collation.to_string(), "'es'");
+            assert!(matches!(expr.as_ref(), Expr::Cast { .. }));
+        }
+        expr => panic!("Expected COLLATE expression, got {expr:?}"),
+    }
+}
+
+#[test]
 fn test_drop_constraints() {
     snowflake().verified_stmt("ALTER TABLE tbl DROP PRIMARY KEY");
     snowflake().verified_stmt("ALTER TABLE tbl DROP FOREIGN KEY k1");
