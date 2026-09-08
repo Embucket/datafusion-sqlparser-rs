@@ -5202,3 +5202,40 @@ fn test_external_volume() {
         "Unexpected error: {err}"
     );
 }
+
+#[test]
+fn test_structured_object_type() {
+    snowflake().one_statement_parses_to(
+        "SELECT payload::OBJECT(tags ARRAY(VARCHAR), address OBJECT(city VARCHAR NOT NULL)) FROM t",
+        "SELECT payload::OBJECT(tags Array(VARCHAR), address OBJECT(city VARCHAR NOT NULL)) FROM t",
+    );
+
+    let select = snowflake().verified_only_select(
+        "SELECT CAST(payload AS OBJECT(city VARCHAR, zip NUMBER NOT NULL)) FROM t",
+    );
+    let Expr::Cast { data_type, .. } = expr_from_projection(only(&select.projection)) else {
+        unreachable!();
+    };
+    let DataType::Object(fields) = data_type else {
+        unreachable!();
+    };
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, Ident::new("city"));
+    assert!(fields[0].options.is_empty());
+    assert_eq!(fields[1].name, Ident::new("zip"));
+    assert_eq!(fields[1].options.len(), 1);
+    assert_eq!(fields[1].options[0].option, ColumnOption::NotNull);
+
+    snowflake().verified_stmt("CREATE TABLE t (o OBJECT)");
+}
+
+#[test]
+fn test_structured_object_type_errors() {
+    for sql in [
+        "CREATE TABLE t (o OBJECT(VARCHAR))",
+        "CREATE TABLE t (o OBJECT(city VARCHAR NULL))",
+        "CREATE TABLE t (o OBJECT(city VARCHAR)",
+    ] {
+        assert!(snowflake().parse_sql_statements(sql).is_err(), "{sql}");
+    }
+}
