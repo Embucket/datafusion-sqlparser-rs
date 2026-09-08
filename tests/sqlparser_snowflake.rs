@@ -1289,6 +1289,27 @@ fn parse_array() {
         },
         expr_from_projection(only(&select.projection))
     );
+
+    let sql = "SELECT CAST(a AS ARRAY(VARCHAR)) FROM customer";
+    let select = snowflake()
+        .verified_only_select_with_canonical(sql, "SELECT CAST(a AS Array(VARCHAR)) FROM customer");
+    assert_eq!(
+        &Expr::Cast {
+            kind: CastKind::Cast,
+            expr: Box::new(Expr::Identifier(Ident::new("a"))),
+            data_type: DataType::Array(ArrayElemTypeDef::Parenthesis(Box::new(DataType::Varchar(
+                None
+            ),))),
+            array: false,
+            format: None,
+        },
+        expr_from_projection(only(&select.projection))
+    );
+
+    snowflake().one_statement_parses_to(
+        "CREATE TABLE t (a ARRAY(NUMBER))",
+        "CREATE TABLE t (a Array(NUMBER))",
+    );
 }
 
 #[test]
