@@ -45,6 +45,19 @@ fn test_snowflake_create_table() {
 }
 
 #[test]
+fn parse_order_by_all() {
+    let query = snowflake()
+        .verified_query("SELECT value + 1 AS computed FROM source ORDER BY ALL DESC NULLS FIRST");
+    assert_eq!(
+        query.order_by.expect("ORDER BY expected").kind,
+        OrderByKind::All(OrderByOptions {
+            asc: Some(false),
+            nulls_first: Some(true),
+        })
+    );
+}
+
+#[test]
 fn test_snowflake_create_table_timestamp_ntz_precision_ctas_values() {
     let sql = "CREATE TABLE t (x TIMESTAMP_NTZ(3)) AS SELECT * FROM VALUES ('2025-04-09T21:11:23')";
     let canonical =
