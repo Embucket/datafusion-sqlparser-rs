@@ -649,6 +649,13 @@ pub enum MergeInsertKind {
     /// ```
     /// [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/dml-syntax#merge_statement)
     Row,
+    /// Snowflake's name-based shorthand for inserting every target column.
+    ///
+    /// Example:
+    /// ```sql
+    /// INSERT ALL BY NAME
+    /// ```
+    AllByName,
 }
 
 impl Display for MergeInsertKind {
@@ -659,6 +666,9 @@ impl Display for MergeInsertKind {
             }
             MergeInsertKind::Row => {
                 write!(f, "ROW")
+            }
+            MergeInsertKind::AllByName => {
+                write!(f, "ALL BY NAME")
             }
         }
     }
@@ -710,6 +720,35 @@ impl Display for MergeInsertExpr {
     }
 }
 
+/// The kind of update used within a `MERGE` statement.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum MergeUpdateKind {
+    /// Standard update with explicit assignments.
+    Set(Vec<Assignment>),
+    /// Snowflake's name-based shorthand for updating every target column.
+    ///
+    /// Example:
+    /// ```sql
+    /// UPDATE ALL BY NAME
+    /// ```
+    AllByName,
+}
+
+impl Display for MergeUpdateKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MergeUpdateKind::Set(assignments) => {
+                write!(f, "SET {}", display_comma_separated(assignments))
+            }
+            MergeUpdateKind::AllByName => {
+                write!(f, "ALL BY NAME")
+            }
+        }
+    }
+}
+
 /// The expression used to update rows within a `MERGE` statement.
 ///
 /// Examples
@@ -726,8 +765,8 @@ impl Display for MergeInsertExpr {
 pub struct MergeUpdateExpr {
     /// The `UPDATE` token that starts the sub-expression.
     pub update_token: AttachedToken,
-    /// The update assiment expressions
-    pub assignments: Vec<Assignment>,
+    /// The update kind.
+    pub kind: MergeUpdateKind,
     /// `where_clause` for the update (Oralce specific)
     pub update_predicate: Option<Expr>,
     /// `delete_clause` for the update "delete where" (Oracle specific)
@@ -736,7 +775,7 @@ pub struct MergeUpdateExpr {
 
 impl Display for MergeUpdateExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "SET {}", display_comma_separated(&self.assignments))?;
+        write!(f, "{}", self.kind)?;
         if let Some(predicate) = self.update_predicate.as_ref() {
             write!(f, " WHERE {predicate}")?;
         }

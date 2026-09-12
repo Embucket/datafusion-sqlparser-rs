@@ -58,6 +58,29 @@ fn parse_order_by_all() {
 }
 
 #[test]
+fn parse_merge_all_by_name() {
+    let sql = "MERGE INTO target AS t USING source AS s ON t.id = s.id WHEN MATCHED THEN UPDATE ALL BY NAME WHEN NOT MATCHED THEN INSERT ALL BY NAME";
+    let Statement::Merge(merge) = snowflake().verified_stmt(sql) else {
+        unreachable!();
+    };
+
+    assert!(matches!(
+        merge.clauses[0].action,
+        MergeAction::Update(MergeUpdateExpr {
+            kind: MergeUpdateKind::AllByName,
+            ..
+        })
+    ));
+    assert!(matches!(
+        merge.clauses[1].action,
+        MergeAction::Insert(MergeInsertExpr {
+            kind: MergeInsertKind::AllByName,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn test_snowflake_create_table_timestamp_ntz_precision_ctas_values() {
     let sql = "CREATE TABLE t (x TIMESTAMP_NTZ(3)) AS SELECT * FROM VALUES ('2025-04-09T21:11:23')";
     let canonical =
