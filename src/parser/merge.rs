@@ -18,9 +18,9 @@ use alloc::{boxed::Box, format, vec, vec::Vec};
 use crate::{
     ast::{
         Merge, MergeAction, MergeClause, MergeClauseKind, MergeInsertExpr, MergeInsertKind,
-        MergeUpdateExpr, ObjectName, OutputClause, SetExpr,
+        MergeUpdateExpr, MergeUpdateKind, ObjectName, OutputClause, SetExpr,
     },
-    dialect::{BigQueryDialect, GenericDialect, MySqlDialect},
+    dialect::{BigQueryDialect, GenericDialect, MySqlDialect, SnowflakeDialect},
     keywords::Keyword,
     parser::IsOptional,
     tokenizer::TokenWithSpan,
@@ -119,8 +119,14 @@ impl Parser<'_> {
                     }
 
                     let update_token = self.get_current_token().clone();
-                    self.expect_keyword_is(Keyword::SET)?;
-                    let assignments = self.parse_comma_separated(Parser::parse_assignment)?;
+                    let kind = if dialect_of!(self is SnowflakeDialect)
+                        && self.parse_keywords(&[Keyword::ALL, Keyword::BY, Keyword::NAME])
+                    {
+                        MergeUpdateKind::AllByName
+                    } else {
+                        self.expect_keyword_is(Keyword::SET)?;
+                        MergeUpdateKind::Set(self.parse_comma_separated(Parser::parse_assignment)?)
+                    };
                     let update_predicate = if self.parse_keyword(Keyword::WHERE) {
                         Some(self.parse_expr()?)
                     } else {
@@ -134,7 +140,7 @@ impl Parser<'_> {
                     };
                     MergeAction::Update(MergeUpdateExpr {
                         update_token: update_token.into(),
-                        assignments,
+                        kind,
                         update_predicate,
                         delete_predicate,
                     })
@@ -168,17 +174,27 @@ impl Parser<'_> {
 
                     let insert_token = self.get_current_token().clone();
                     let is_mysql = dialect_of!(self is MySqlDialect);
-
-                    let columns = self.parse_merge_clause_insert_columns(is_mysql)?;
-                    let (kind, kind_token) = if dialect_of!(self is BigQueryDialect | GenericDialect)
-                        && self.parse_keyword(Keyword::ROW)
+                    let (columns, kind, kind_token) = if dialect_of!(self is SnowflakeDialect)
+                        && self.parse_keywords(&[Keyword::ALL, Keyword::BY, Keyword::NAME])
                     {
-                        (MergeInsertKind::Row, self.get_current_token().clone())
+                        (
+                            vec![],
+                            MergeInsertKind::AllByName,
+                            self.get_current_token().clone(),
+                        )
                     } else {
-                        self.expect_keyword_is(Keyword::VALUES)?;
-                        let values_token = self.get_current_token().clone();
-                        let values = self.parse_values(is_mysql, false)?;
-                        (MergeInsertKind::Values(values), values_token)
+                        let columns = self.parse_merge_clause_insert_columns(is_mysql)?;
+                        let (kind, kind_token) = if dialect_of!(self is BigQueryDialect | GenericDialect)
+                            && self.parse_keyword(Keyword::ROW)
+                        {
+                            (MergeInsertKind::Row, self.get_current_token().clone())
+                        } else {
+                            self.expect_keyword_is(Keyword::VALUES)?;
+                            let values_token = self.get_current_token().clone();
+                            let values = self.parse_values(is_mysql, false)?;
+                            (MergeInsertKind::Values(values), values_token)
+                        };
+                        (columns, kind, kind_token)
                     };
                     let insert_predicate = if self.parse_keyword(Keyword::WHERE) {
                         Some(self.parse_expr()?)
