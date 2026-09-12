@@ -2150,6 +2150,64 @@ fn test_create_stage() {
 }
 
 #[test]
+fn test_create_file_format() {
+    let sql = "CREATE FILE FORMAT analytics.formats.parquet TYPE=PARQUET";
+    match snowflake().verified_stmt(sql) {
+        Statement::CreateFileFormat {
+            or_replace,
+            temporary,
+            if_not_exists,
+            name,
+            options,
+            comment,
+        } => {
+            assert!(!or_replace);
+            assert!(!temporary);
+            assert!(!if_not_exists);
+            assert_eq!(name.to_string(), "analytics.formats.parquet");
+            assert_eq!(options.options.len(), 1);
+            assert!(comment.is_none());
+        }
+        _ => unreachable!(),
+    }
+    assert_eq!(snowflake().verified_stmt(sql).to_string(), sql);
+
+    let sql = "CREATE FILE FORMAT IF NOT EXISTS existing_format TYPE=JSON";
+    match snowflake().verified_stmt(sql) {
+        Statement::CreateFileFormat { if_not_exists, .. } => assert!(if_not_exists),
+        _ => unreachable!(),
+    }
+
+    let sql = concat!(
+        "CREATE OR REPLACE TEMPORARY FILE FORMAT csv_format ",
+        "TYPE=CSV FIELD_DELIMITER='|' NULL_IF=('NULL', 'null') ",
+        "COMMENT='pipe-delimited input'"
+    );
+    match snowflake().verified_stmt(sql) {
+        Statement::CreateFileFormat {
+            or_replace,
+            temporary,
+            if_not_exists,
+            name,
+            options,
+            comment,
+        } => {
+            assert!(or_replace);
+            assert!(temporary);
+            assert!(!if_not_exists);
+            assert_eq!(name.to_string(), "csv_format");
+            assert_eq!(options.options.len(), 3);
+            assert_eq!(comment.as_deref(), Some("pipe-delimited input"));
+        }
+        _ => unreachable!(),
+    }
+    assert_eq!(snowflake().verified_stmt(sql).to_string(), sql);
+
+    let sql = "CREATE VOLATILE FILE FORMAT json_format TYPE=JSON";
+    snowflake().one_statement_parses_to(sql, "CREATE TEMPORARY FILE FORMAT json_format TYPE=JSON");
+}
+
+#[test]
 fn test_create_stage_with_stage_params() {
     let sql = concat!(
         "CREATE OR REPLACE STAGE my_ext_stage ",
