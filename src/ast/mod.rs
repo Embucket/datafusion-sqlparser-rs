@@ -4511,6 +4511,24 @@ pub enum Statement {
         comment: Option<String>,
     },
     /// ```sql
+    /// CREATE FILE FORMAT
+    /// ```
+    /// See <https://docs.snowflake.com/en/sql-reference/sql/create-file-format>
+    CreateFileFormat {
+        /// `OR REPLACE` flag.
+        or_replace: bool,
+        /// Whether the file format is temporary or volatile.
+        temporary: bool,
+        /// `IF NOT EXISTS` flag.
+        if_not_exists: bool,
+        /// File format name.
+        name: ObjectName,
+        /// Format type and format-specific options.
+        options: KeyValueOptions,
+        /// Optional comment.
+        comment: Option<String>,
+    },
+    /// ```sql
     /// ASSERT <condition> [AS <message>]
     /// ```
     Assert {
@@ -6225,6 +6243,29 @@ impl fmt::Display for Statement {
                 }
                 if comment.is_some() {
                     write!(f, " COMMENT='{}'", comment.as_ref().unwrap())?;
+                }
+                Ok(())
+            }
+            Statement::CreateFileFormat {
+                or_replace,
+                temporary,
+                if_not_exists,
+                name,
+                options,
+                comment,
+            } => {
+                write!(
+                    f,
+                    "CREATE {or_replace}{temporary}FILE FORMAT {if_not_exists}{name}",
+                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
+                    temporary = if *temporary { "TEMPORARY " } else { "" },
+                    if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
+                )?;
+                if !options.options.is_empty() {
+                    write!(f, " {options}")?;
+                }
+                if let Some(comment) = comment {
+                    write!(f, " COMMENT='{comment}'")?;
                 }
                 Ok(())
             }

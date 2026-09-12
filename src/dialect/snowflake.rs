@@ -328,6 +328,12 @@ impl Dialect for SnowflakeDialect {
             if parser.parse_keyword(Keyword::STAGE) {
                 // OK - this is CREATE STAGE statement
                 return Some(parse_create_stage(or_replace, temporary, parser));
+            } else if parser.parse_keywords(&[Keyword::FILE, Keyword::FORMAT]) {
+                return Some(parse_create_file_format(
+                    or_replace,
+                    temporary || volatile,
+                    parser,
+                ));
             } else if parser.parse_keyword(Keyword::TABLE) {
                 return Some(
                     parse_create_table(
@@ -1422,6 +1428,31 @@ pub fn parse_create_stage(
             options: copy_options,
             delimiter: KeyValueOptionsDelimiter::Space,
         },
+        comment,
+    })
+}
+
+pub fn parse_create_file_format(
+    or_replace: bool,
+    temporary: bool,
+    parser: &mut Parser,
+) -> Result<Statement, ParserError> {
+    let if_not_exists = parser.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+    let name = parser.parse_object_name(false)?;
+    let options = parser.parse_key_value_options(false, &[Keyword::COMMENT])?;
+    let comment = if parser.parse_keyword(Keyword::COMMENT) {
+        parser.expect_token(&Token::Eq)?;
+        Some(parser.parse_comment_value()?)
+    } else {
+        None
+    };
+
+    Ok(Statement::CreateFileFormat {
+        or_replace,
+        temporary,
+        if_not_exists,
+        name,
+        options,
         comment,
     })
 }
