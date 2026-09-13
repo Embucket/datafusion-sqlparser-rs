@@ -3230,6 +3230,7 @@ fn asof_joins() {
             joins: vec![Join {
                 relation: table_with_alias("quotes_unixtime", true, "qu"),
                 global: false,
+                directed: false,
                 join_operator: JoinOperator::AsOf {
                     match_condition: Expr::BinaryOp {
                         left: Box::new(Expr::CompoundIdentifier(vec![
@@ -3293,6 +3294,36 @@ fn asof_joins() {
               "ON showtime.state = preciptime.state ",
           "ORDER BY showtime.observed",
     ));
+}
+
+#[test]
+fn directed_joins() {
+    for sql in [
+        "SELECT * FROM t1 INNER DIRECTED JOIN t2 ON t1.id = t2.id",
+        "SELECT * FROM t1 LEFT DIRECTED JOIN t2 USING(id)",
+        "SELECT * FROM t1 LEFT OUTER DIRECTED JOIN t2 ON t1.id = t2.id",
+        "SELECT * FROM t1 RIGHT DIRECTED JOIN t2 ON t1.id = t2.id",
+        "SELECT * FROM t1 RIGHT OUTER DIRECTED JOIN t2 ON t1.id = t2.id",
+        "SELECT * FROM t1 FULL DIRECTED JOIN t2 ON t1.id = t2.id",
+        "SELECT * FROM t1 CROSS DIRECTED JOIN t2",
+        "SELECT * FROM t1 NATURAL INNER DIRECTED JOIN t2",
+    ] {
+        let query = snowflake().verified_only_select(sql);
+        assert!(query.from[0].joins[0].directed, "{sql}");
+    }
+
+    assert!(
+        snowflake()
+            .parse_sql_statements("SELECT * FROM t1 DIRECTED JOIN t2")
+            .is_err(),
+        "Snowflake requires an explicit join type before DIRECTED"
+    );
+    assert!(
+        TestedDialects::new(vec![Box::new(GenericDialect {})])
+            .parse_sql_statements("SELECT * FROM t1 INNER DIRECTED JOIN t2")
+            .is_err(),
+        "DIRECTED must remain Snowflake-dialect specific"
+    );
 }
 
 #[test]
@@ -4506,6 +4537,7 @@ fn test_nested_join_without_parentheses() {
                             index_hints: vec![],
                         },
                         global: false,
+                        directed: false,
                         join_operator: JoinOperator::Inner(JoinConstraint::On(Expr::BinaryOp {
                             left: Box::new(Expr::CompoundIdentifier(vec![
                                 Ident::new("p".to_string()),
@@ -4522,6 +4554,7 @@ fn test_nested_join_without_parentheses() {
                 alias: None
             },
             global: false,
+            directed: false,
             join_operator: JoinOperator::Inner(JoinConstraint::On(Expr::BinaryOp {
                 left: Box::new(Expr::CompoundIdentifier(vec![
                     Ident::new("c".to_string()),
@@ -4573,6 +4606,7 @@ fn test_nested_join_without_parentheses() {
                             index_hints: vec![],
                         },
                         global: false,
+                        directed: false,
                         join_operator: JoinOperator::Join(JoinConstraint::On(Expr::BinaryOp {
                             left: Box::new(Expr::CompoundIdentifier(vec![
                                 Ident::new("p".to_string()),
@@ -4589,6 +4623,7 @@ fn test_nested_join_without_parentheses() {
                 alias: None
             },
             global: false,
+            directed: false,
             join_operator: JoinOperator::Join(JoinConstraint::On(Expr::BinaryOp {
                 left: Box::new(Expr::CompoundIdentifier(vec![
                     Ident::new("c".to_string()),
@@ -4640,6 +4675,7 @@ fn test_nested_join_without_parentheses() {
                             index_hints: vec![],
                         },
                         global: false,
+                        directed: false,
                         join_operator: JoinOperator::Left(JoinConstraint::On(Expr::BinaryOp {
                             left: Box::new(Expr::CompoundIdentifier(vec![
                                 Ident::new("p".to_string()),
@@ -4656,6 +4692,7 @@ fn test_nested_join_without_parentheses() {
                 alias: None
             },
             global: false,
+            directed: false,
             join_operator: JoinOperator::Left(JoinConstraint::On(Expr::BinaryOp {
                 left: Box::new(Expr::CompoundIdentifier(vec![
                     Ident::new("c".to_string()),
@@ -4707,6 +4744,7 @@ fn test_nested_join_without_parentheses() {
                             index_hints: vec![],
                         },
                         global: false,
+                        directed: false,
                         join_operator: JoinOperator::Right(JoinConstraint::On(Expr::BinaryOp {
                             left: Box::new(Expr::CompoundIdentifier(vec![
                                 Ident::new("p".to_string()),
@@ -4723,6 +4761,7 @@ fn test_nested_join_without_parentheses() {
                 alias: None
             },
             global: false,
+            directed: false,
             join_operator: JoinOperator::Right(JoinConstraint::On(Expr::BinaryOp {
                 left: Box::new(Expr::CompoundIdentifier(vec![
                     Ident::new("c".to_string()),
@@ -4774,6 +4813,7 @@ fn test_nested_join_without_parentheses() {
                             index_hints: vec![],
                         },
                         global: false,
+                        directed: false,
                         join_operator: JoinOperator::FullOuter(JoinConstraint::On(
                             Expr::BinaryOp {
                                 left: Box::new(Expr::CompoundIdentifier(vec![
@@ -4792,6 +4832,7 @@ fn test_nested_join_without_parentheses() {
                 alias: None
             },
             global: false,
+            directed: false,
             join_operator: JoinOperator::FullOuter(JoinConstraint::On(Expr::BinaryOp {
                 left: Box::new(Expr::CompoundIdentifier(vec![
                     Ident::new("c".to_string()),

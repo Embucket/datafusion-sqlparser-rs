@@ -2220,7 +2220,8 @@ impl Spanned for Join {
     fn span(&self) -> Span {
         let Join {
             relation,
-            global: _, // bool
+            global: _,   // bool
+            directed: _, // bool
             join_operator,
         } = self;
 
