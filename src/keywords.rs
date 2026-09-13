@@ -336,6 +336,7 @@ define_keywords!(
     DETAIL,
     DETERMINISTIC,
     DIMENSIONS,
+    DIRECTED,
     DIRECTORY,
     DISABLE,
     DISCARD,

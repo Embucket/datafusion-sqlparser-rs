@@ -7326,6 +7326,7 @@ fn parse_implicit_join() {
                 joins: vec![Join {
                     relation: table_from_name(ObjectName::from(vec!["t1b".into()])),
                     global: false,
+                    directed: false,
                     join_operator: JoinOperator::Join(JoinConstraint::Natural),
                 }],
             },
@@ -7334,6 +7335,7 @@ fn parse_implicit_join() {
                 joins: vec![Join {
                     relation: table_from_name(ObjectName::from(vec!["t2b".into()])),
                     global: false,
+                    directed: false,
                     join_operator: JoinOperator::Join(JoinConstraint::Natural),
                 }],
             },
@@ -7350,6 +7352,7 @@ fn parse_cross_join() {
         Join {
             relation: table_from_name(ObjectName::from(vec![Ident::new("t2")])),
             global: false,
+            directed: false,
             join_operator: JoinOperator::CrossJoin(JoinConstraint::None),
         },
         only(only(select.from).joins),
@@ -7362,6 +7365,7 @@ fn parse_cross_join_constraint() {
         Join {
             relation: table_from_name(ObjectName::from(vec![Ident::new("t2")])),
             global: false,
+            directed: false,
             join_operator: JoinOperator::CrossJoin(constraint),
         }
     }
@@ -7411,6 +7415,7 @@ fn parse_joins_on() {
                 index_hints: vec![],
             },
             global,
+            directed: false,
             join_operator: f(JoinConstraint::On(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier("c1".into())),
                 op: BinaryOperator::Eq,
@@ -7553,6 +7558,7 @@ fn parse_joins_using() {
                 index_hints: vec![],
             },
             global: false,
+            directed: false,
             join_operator: f(JoinConstraint::Using(vec![ObjectName::from(vec![
                 "c1".into()
             ])])),
@@ -7648,6 +7654,7 @@ fn parse_natural_join() {
                 index_hints: vec![],
             },
             global: false,
+            directed: false,
             join_operator: f(JoinConstraint::Natural),
         }
     }
@@ -7953,6 +7960,7 @@ fn parse_derived_tables() {
                 joins: vec![Join {
                     relation: table_from_name(ObjectName::from(vec!["t2".into()])),
                     global: false,
+                    directed: false,
                     join_operator: JoinOperator::Join(JoinConstraint::Natural),
                 }],
             }),
@@ -9055,6 +9063,7 @@ fn lateral_function() {
                     alias: None,
                 },
                 global: false,
+                directed: false,
                 join_operator: JoinOperator::Left(JoinConstraint::None),
             }],
         }],

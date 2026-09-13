@@ -483,6 +483,10 @@ impl Dialect for SnowflakeDialect {
         false
     }
 
+    fn supports_directed_join(&self) -> bool {
+        true
+    }
+
     fn is_reserved_for_identifier(&self, kw: Keyword) -> bool {
         // Unreserve some keywords that Snowflake accepts as identifiers
         // See: https://docs.snowflake.com/en/sql-reference/reserved-keywords
@@ -588,6 +592,8 @@ impl Dialect for SnowflakeDialect {
             }
 
             Keyword::GLOBAL if parser.peek_keyword(Keyword::FULL) => false,
+
+            Keyword::DIRECTED if parser.peek_keyword(Keyword::JOIN) => false,
 
             // Reserved keywords by the Snowflake dialect, which seem to be less strictive
             // than what is listed in `keywords::RESERVED_FOR_TABLE_ALIAS`. The following

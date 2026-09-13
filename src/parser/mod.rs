@@ -15784,9 +15784,11 @@ impl<'a> Parser<'a> {
         loop {
             let global = self.parse_keyword(Keyword::GLOBAL);
             let join = if self.parse_keyword(Keyword::CROSS) {
+                let directed =
+                    self.dialect.supports_directed_join() && self.parse_keyword(Keyword::DIRECTED);
                 let join_operator = if self.parse_keyword(Keyword::JOIN) {
                     JoinOperator::CrossJoin(JoinConstraint::None)
-                } else if self.parse_keyword(Keyword::APPLY) {
+                } else if !directed && self.parse_keyword(Keyword::APPLY) {
                     // MSSQL extension, similar to CROSS JOIN LATERAL
                     JoinOperator::CrossApply
                 } else {
@@ -15804,6 +15806,7 @@ impl<'a> Parser<'a> {
                 Join {
                     relation,
                     global,
+                    directed,
                     join_operator,
                 }
             } else if self.parse_keyword(Keyword::OUTER) {
@@ -15812,6 +15815,7 @@ impl<'a> Parser<'a> {
                 Join {
                     relation: self.parse_table_factor()?,
                     global,
+                    directed: false,
                     join_operator: JoinOperator::OuterApply,
                 }
             } else if self.parse_keyword(Keyword::ASOF) {
@@ -15822,6 +15826,7 @@ impl<'a> Parser<'a> {
                 Join {
                     relation,
                     global,
+                    directed: false,
                     join_operator: JoinOperator::AsOf {
                         match_condition,
                         constraint: self.parse_join_constraint(false)?,
@@ -15834,6 +15839,7 @@ impl<'a> Parser<'a> {
                 Join {
                     relation: self.parse_table_factor()?,
                     global,
+                    directed: false,
                     join_operator: JoinOperator::InnerArrayJoin,
                 }
             } else if self.dialect.supports_array_join_syntax()
@@ -15843,6 +15849,7 @@ impl<'a> Parser<'a> {
                 Join {
                     relation: self.parse_table_factor()?,
                     global,
+                    directed: false,
                     join_operator: JoinOperator::LeftArrayJoin,
                 }
             } else if self.dialect.supports_array_join_syntax()
@@ -15852,10 +15859,12 @@ impl<'a> Parser<'a> {
                 Join {
                     relation: self.parse_table_factor()?,
                     global,
+                    directed: false,
                     join_operator: JoinOperator::ArrayJoin,
                 }
             } else {
                 let natural = self.parse_keyword(Keyword::NATURAL);
+                let mut directed = false;
                 let peek_keyword = if let Token::Word(w) = &self.peek_token_ref().token {
                     w.keyword
                 } else {
@@ -15865,6 +15874,10 @@ impl<'a> Parser<'a> {
                 let join_operator_type = match peek_keyword {
                     Keyword::INNER | Keyword::JOIN => {
                         let inner = self.parse_keyword(Keyword::INNER); // [ INNER ]
+                        if inner {
+                            directed = self.dialect.supports_directed_join()
+                                && self.parse_keyword(Keyword::DIRECTED);
+                        }
                         self.expect_keyword_is(Keyword::JOIN)?;
                         if inner {
                             JoinOperator::Inner
@@ -15879,10 +15892,13 @@ impl<'a> Parser<'a> {
                             Keyword::OUTER,
                             Keyword::SEMI,
                             Keyword::ANTI,
+                            Keyword::DIRECTED,
                             Keyword::JOIN,
                         ]);
                         match join_type {
                             Some(Keyword::OUTER) => {
+                                directed = self.dialect.supports_directed_join()
+                                    && self.parse_keyword(Keyword::DIRECTED);
                                 self.expect_keyword_is(Keyword::JOIN)?;
                                 if is_left {
                                     JoinOperator::LeftOuter
@@ -15906,6 +15922,15 @@ impl<'a> Parser<'a> {
                                     JoinOperator::RightAnti
                                 }
                             }
+                            Some(Keyword::DIRECTED) if self.dialect.supports_directed_join() => {
+                                directed = true;
+                                self.expect_keyword_is(Keyword::JOIN)?;
+                                if is_left {
+                                    JoinOperator::Left
+                                } else {
+                                    JoinOperator::Right
+                                }
+                            }
                             Some(Keyword::JOIN) => {
                                 if is_left {
                                     JoinOperator::Left
@@ -15915,7 +15940,7 @@ impl<'a> Parser<'a> {
                             }
                             _ => {
                                 return Err(ParserError::ParserError(format!(
-                                    "expected OUTER, SEMI, ANTI or JOIN after {kw:?}"
+                                    "expected OUTER, SEMI, ANTI, DIRECTED or JOIN after {kw:?}"
                                 )))
                             }
                         }
@@ -15933,6 +15958,8 @@ impl<'a> Parser<'a> {
                     Keyword::FULL => {
                         let _ = self.next_token(); // consume FULL
                         let _ = self.parse_keyword(Keyword::OUTER); // [ OUTER ]
+                        directed = self.dialect.supports_directed_join()
+                            && self.parse_keyword(Keyword::DIRECTED);
                         self.expect_keyword_is(Keyword::JOIN)?;
                         JoinOperator::FullOuter
                     }
@@ -15967,6 +15994,7 @@ impl<'a> Parser<'a> {
                 Join {
                     relation,
                     global,
+                    directed,
                     join_operator: join_operator_type(join_constraint),
                 }
             };
