@@ -2180,6 +2180,8 @@ pub enum RepetitionQuantifier {
     AtMost(u32),
     /// `{n,m}
     Range(u32, u32),
+    /// A reluctant (non-greedy) quantifier, for example `*?` or `{n,m}?`.
+    Reluctant(Box<RepetitionQuantifier>),
 }
 
 impl fmt::Display for RepetitionQuantifier {
@@ -2193,6 +2195,7 @@ impl fmt::Display for RepetitionQuantifier {
             AtLeast(n) => write!(f, "{{{n},}}"),
             AtMost(n) => write!(f, "{{,{n}}}"),
             Range(n, m) => write!(f, "{{{n},{m}}}"),
+            Reluctant(quantifier) => write!(f, "{quantifier}?"),
         }
     }
 }
