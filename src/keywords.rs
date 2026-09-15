@@ -911,6 +911,7 @@ define_keywords!(
     ROW_NUMBER,
     RULE,
     RUN,
+    RUNNING,
     SAFE,
     SAFE_CAST,
     SAMPLE,

@@ -16709,10 +16709,21 @@ impl<'a> Parser<'a> {
 
         let measures = if self.parse_keyword(Keyword::MEASURES) {
             self.parse_comma_separated(|p| {
+                let window_semantic = if p.parse_keyword(Keyword::RUNNING) {
+                    Some(MatchRecognizeWindowSemantic::Running)
+                } else if p.parse_keyword(Keyword::FINAL) {
+                    Some(MatchRecognizeWindowSemantic::Final)
+                } else {
+                    None
+                };
                 let expr = p.parse_expr()?;
                 let _ = p.parse_keyword(Keyword::AS);
                 let alias = p.parse_identifier()?;
-                Ok(Measure { expr, alias })
+                Ok(Measure {
+                    window_semantic,
+                    expr,
+                    alias,
+                })
             })?
         } else {
             vec![]
