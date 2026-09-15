@@ -1987,6 +1987,9 @@ impl fmt::Display for PivotValueSource {
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
 /// An item in the `MEASURES` clause of `MATCH_RECOGNIZE`.
 pub struct Measure {
+    /// Explicit window-frame semantic for the measure.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub window_semantic: Option<MatchRecognizeWindowSemantic>,
     /// Expression producing the measure value.
     pub expr: Expr,
     /// Alias for the measure column.
@@ -1995,7 +1998,32 @@ pub struct Measure {
 
 impl fmt::Display for Measure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(window_semantic) = self.window_semantic {
+            write!(f, "{window_semantic} ")?;
+        }
         write!(f, "{} AS {}", self.expr, self.alias)
+    }
+}
+
+/// Window-frame semantic for a `MATCH_RECOGNIZE` measure.
+///
+/// See <https://docs.snowflake.com/en/sql-reference/constructs/match_recognize#label-match-recognize-navigational-functions>.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum MatchRecognizeWindowSemantic {
+    /// The frame ends at the current row.
+    Running,
+    /// The frame ends at the last row of the match.
+    Final,
+}
+
+impl fmt::Display for MatchRecognizeWindowSemantic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Running => write!(f, "RUNNING"),
+            Self::Final => write!(f, "FINAL"),
+        }
     }
 }
 

@@ -13246,8 +13246,8 @@ fn test_match_recognize() {
             "ORDER BY price_date ",
             "MEASURES ",
             "MATCH_NUMBER() AS match_number, ",
-            "FIRST(price_date) AS start_date, ",
-            "LAST(price_date) AS end_date ",
+            "FINAL FIRST(price_date) AS start_date, ",
+            "RUNNING LAST(price_date) AS end_date ",
             "ONE ROW PER MATCH ",
             "AFTER MATCH SKIP TO LAST row_with_price_increase ",
             "PATTERN (row_before_decrease row_with_price_decrease+ row_with_price_increase+) ",
@@ -13268,14 +13268,17 @@ fn test_match_recognize() {
             }],
             measures: vec![
                 Measure {
+                    window_semantic: None,
                     expr: call("MATCH_NUMBER", []),
                     alias: Ident::new("match_number"),
                 },
                 Measure {
+                    window_semantic: Some(MatchRecognizeWindowSemantic::Final),
                     expr: call("FIRST", [Expr::Identifier(Ident::new("price_date"))]),
                     alias: Ident::new("start_date"),
                 },
                 Measure {
+                    window_semantic: Some(MatchRecognizeWindowSemantic::Running),
                     expr: call("LAST", [Expr::Identifier(Ident::new("price_date"))]),
                     alias: Ident::new("end_date"),
                 },
