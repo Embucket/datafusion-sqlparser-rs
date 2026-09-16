@@ -2669,6 +2669,29 @@ fn test_copy_into_with_transformations() {
 }
 
 #[test]
+fn test_copy_into_with_nested_transformation_path() {
+    let sql = concat!(
+        "COPY INTO cities FROM ",
+        "(SELECT $1:continent::VARCHAR, $1:country:name::VARCHAR ",
+        "FROM @sf_tut_stage/cities.parquet)"
+    );
+
+    let statement = snowflake().verified_stmt(sql);
+    assert_eq!(statement.to_string(), sql);
+    let Statement::CopyIntoSnowflake {
+        from_transformations: Some(transformations),
+        ..
+    } = statement
+    else {
+        panic!("expected COPY transformations");
+    };
+    assert!(transformations.iter().all(|item| matches!(
+        item,
+        StageLoadSelectItemKind::SelectItem(SelectItem::UnnamedExpr(Expr::Cast { .. }))
+    )));
+}
+
+#[test]
 fn test_copy_into_file_format() {
     let sql = concat!(
         "COPY INTO my_company.emp_basic ",
