@@ -1760,6 +1760,18 @@ fn parse_select_item_for_data_load(
         }
     }
 
+    // A simple staged field has a dedicated compact AST node. More complex
+    // paths and casts must fall back to the standard expression parser so it
+    // can preserve the complete `JsonAccess` / `Cast` expression instead of
+    // leaving trailing tokens for the enclosing COPY parser.
+    if matches!(
+        parser.peek_token_ref().token,
+        Token::Colon | Token::Period | Token::LBracket | Token::DoubleColon
+    ) {
+        let token = parser.next_token();
+        return parser.expected("end of simple staged field", token);
+    }
+
     // as
     if parser.parse_keyword(Keyword::AS) {
         item_as = Some(match parser.next_token().token {
