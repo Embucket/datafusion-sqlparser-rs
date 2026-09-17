@@ -13408,6 +13408,15 @@ fn test_match_recognize_patterns() {
     // exclusion
     check("{- FOO -}", Exclude(Named(Ident::new("FOO"))));
 
+    // exclusion immediately after a symbol is concatenation, not a range quantifier
+    check(
+        "S1 {- S2 -}",
+        Concat(vec![
+            Symbol(Named(Ident::new("S1"))),
+            Exclude(Named(Ident::new("S2"))),
+        ]),
+    );
+
     check(
         "PERMUTE(A, B, C)",
         Permute(vec![
