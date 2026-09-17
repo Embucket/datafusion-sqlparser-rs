@@ -16854,6 +16854,10 @@ impl<'a> Parser<'a> {
             Token::Mul => RepetitionQuantifier::ZeroOrMore,
             Token::Plus => RepetitionQuantifier::OneOrMore,
             Token::Placeholder(s) if s == "?" => RepetitionQuantifier::AtMostOne,
+            Token::LBrace if matches!(self.peek_token_ref().token, Token::Minus) => {
+                self.prev_token();
+                return Ok(pattern);
+            }
             Token::LBrace => {
                 // quantifier is a range like {n} or {n,} or {,m} or {n,m}
                 let token = self.next_token();
