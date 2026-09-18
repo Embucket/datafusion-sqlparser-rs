@@ -4643,6 +4643,10 @@ pub enum Statement {
         /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/desc-table.html)
         /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/describe-table)
         has_table_keyword: bool,
+        /// Snowflake supports `DESC|DESCRIBE VIEW <view_name>` syntax.
+        ///
+        /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/desc-view)
+        has_view_keyword: bool,
         /// Table name
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         table_name: ObjectName,
@@ -5128,6 +5132,7 @@ impl fmt::Display for Statement {
                 describe_alias,
                 hive_format,
                 has_table_keyword,
+                has_view_keyword,
                 table_name,
             } => {
                 write!(f, "{describe_alias} ")?;
@@ -5135,7 +5140,9 @@ impl fmt::Display for Statement {
                 if let Some(format) = hive_format {
                     write!(f, "{format} ")?;
                 }
-                if *has_table_keyword {
+                if *has_view_keyword {
+                    write!(f, "VIEW ")?;
+                } else if *has_table_keyword {
                     write!(f, "TABLE ")?;
                 }
 

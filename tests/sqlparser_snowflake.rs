@@ -3359,12 +3359,14 @@ fn test_parse_position() {
 fn explain_describe() {
     snowflake().verified_stmt("DESCRIBE test.table");
     snowflake().verified_stmt("DESCRIBE TABLE test.table");
+    snowflake().verified_stmt("DESCRIBE VIEW test.view");
 }
 
 #[test]
 fn explain_desc() {
     snowflake().verified_stmt("DESC test.table");
     snowflake().verified_stmt("DESC TABLE test.table");
+    snowflake().verified_stmt("DESC VIEW test.view");
 }
 
 #[test]
@@ -3374,12 +3376,34 @@ fn parse_explain_table() {
             describe_alias,
             hive_format,
             has_table_keyword,
+            has_view_keyword,
             table_name,
         } => {
             assert_eq!(describe_alias, DescribeAlias::Explain);
             assert_eq!(hive_format, None);
             assert_eq!(has_table_keyword, true);
+            assert_eq!(has_view_keyword, false);
             assert_eq!("test_identifier", table_name.to_string());
+        }
+        _ => panic!("Unexpected Statement, must be ExplainTable"),
+    }
+}
+
+#[test]
+fn parse_describe_view() {
+    match snowflake().verified_stmt("DESCRIBE VIEW test_view") {
+        Statement::ExplainTable {
+            describe_alias,
+            hive_format,
+            has_table_keyword,
+            has_view_keyword,
+            table_name,
+        } => {
+            assert_eq!(describe_alias, DescribeAlias::Describe);
+            assert_eq!(hive_format, None);
+            assert!(!has_table_keyword);
+            assert!(has_view_keyword);
+            assert_eq!("test_view", table_name.to_string());
         }
         _ => panic!("Unexpected Statement, must be ExplainTable"),
     }

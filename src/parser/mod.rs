@@ -14048,12 +14048,16 @@ impl<'a> Parser<'a> {
                 } else {
                     false
                 };
+                let has_view_keyword = dialect_of!(self is SnowflakeDialect)
+                    && !has_table_keyword
+                    && self.parse_keyword(Keyword::VIEW);
 
                 let table_name = self.parse_object_name(false)?;
                 Ok(Statement::ExplainTable {
                     describe_alias,
                     hive_format,
                     has_table_keyword,
+                    has_view_keyword,
                     table_name,
                 })
             }
