@@ -4126,6 +4126,21 @@ pub enum Statement {
         session: bool,
     },
     /// ```sql
+    /// SHOW PARAMETERS
+    ///   [ LIKE '<pattern>' ]
+    ///   [ { IN | FOR } { SESSION | ACCOUNT | USER | WAREHOUSE |
+    ///                     DATABASE | SCHEMA | TASK | TABLE } [ <name> ] ]
+    /// ```
+    ///
+    /// Snowflake-specific statement.
+    /// <https://docs.snowflake.com/en/sql-reference/sql/show-parameters>
+    ShowParameters {
+        /// Optional case-insensitive name pattern.
+        filter: Option<ShowStatementFilter>,
+        /// Optional parameter scope.
+        show_in: Option<ShowStatementIn>,
+    },
+    /// ```sql
     /// SHOW CREATE TABLE
     /// ```
     ///
@@ -5830,6 +5845,16 @@ impl fmt::Display for Statement {
                 write!(f, " VARIABLES")?;
                 if filter.is_some() {
                     write!(f, " {}", filter.as_ref().unwrap())?;
+                }
+                Ok(())
+            }
+            Statement::ShowParameters { filter, show_in } => {
+                write!(f, "SHOW PARAMETERS")?;
+                if let Some(filter) = filter {
+                    write!(f, " {filter}")?;
+                }
+                if let Some(show_in) = show_in {
+                    write!(f, " {show_in}")?;
                 }
                 Ok(())
             }
@@ -9265,12 +9290,14 @@ impl fmt::Display for ShowStatementFilter {
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
-/// Clause types used with SHOW ... IN/FROM.
+/// Clause types used with SHOW ... IN/FROM/FOR.
 pub enum ShowStatementInClause {
     /// Use the `IN` clause.
     IN,
     /// Use the `FROM` clause.
     FROM,
+    /// Use the `FOR` clause.
+    FOR,
 }
 
 impl fmt::Display for ShowStatementInClause {
@@ -9279,6 +9306,7 @@ impl fmt::Display for ShowStatementInClause {
         match self {
             FROM => write!(f, "FROM"),
             IN => write!(f, "IN"),
+            FOR => write!(f, "FOR"),
         }
     }
 }
@@ -10937,12 +10965,20 @@ pub enum ShowStatementFilterPosition {
 pub enum ShowStatementInParentType {
     /// ACCOUNT parent type for SHOW statements.
     Account,
+    /// SESSION parent type for SHOW statements.
+    Session,
+    /// USER parent type for SHOW statements.
+    User,
+    /// WAREHOUSE parent type for SHOW statements.
+    Warehouse,
     /// DATABASE parent type for SHOW statements.
     Database,
     /// SCHEMA parent type for SHOW statements.
     Schema,
     /// TABLE parent type for SHOW statements.
     Table,
+    /// TASK parent type for SHOW statements.
+    Task,
     /// VIEW parent type for SHOW statements.
     View,
 }
@@ -10951,9 +10987,13 @@ impl fmt::Display for ShowStatementInParentType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ShowStatementInParentType::Account => write!(f, "ACCOUNT"),
+            ShowStatementInParentType::Session => write!(f, "SESSION"),
+            ShowStatementInParentType::User => write!(f, "USER"),
+            ShowStatementInParentType::Warehouse => write!(f, "WAREHOUSE"),
             ShowStatementInParentType::Database => write!(f, "DATABASE"),
             ShowStatementInParentType::Schema => write!(f, "SCHEMA"),
             ShowStatementInParentType::Table => write!(f, "TABLE"),
+            ShowStatementInParentType::Task => write!(f, "TASK"),
             ShowStatementInParentType::View => write!(f, "VIEW"),
         }
     }

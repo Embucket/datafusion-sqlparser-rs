@@ -439,6 +439,7 @@ impl Spanned for Statement {
             Statement::ShowVariable { .. } => Span::empty(),
             Statement::ShowStatus { .. } => Span::empty(),
             Statement::ShowVariables { .. } => Span::empty(),
+            Statement::ShowParameters { .. } => Span::empty(),
             Statement::ShowCreate { .. } => Span::empty(),
             Statement::ShowColumns { .. } => Span::empty(),
             Statement::ShowTables { .. } => Span::empty(),
