@@ -3574,6 +3574,33 @@ fn test_show_databases() {
 }
 
 #[test]
+fn test_show_parameters() {
+    snowflake().verified_stmt("SHOW PARAMETERS");
+    snowflake().verified_stmt("SHOW PARAMETERS LIKE 'TIME%'");
+    snowflake().verified_stmt("SHOW PARAMETERS IN SESSION");
+    snowflake().verified_stmt("SHOW PARAMETERS FOR ACCOUNT");
+    snowflake().verified_stmt("SHOW PARAMETERS IN USER analyst");
+    snowflake().verified_stmt("SHOW PARAMETERS IN WAREHOUSE analytics_wh");
+    snowflake().verified_stmt("SHOW PARAMETERS IN DATABASE analytics");
+    snowflake().verified_stmt("SHOW PARAMETERS IN SCHEMA analytics.public");
+    snowflake().verified_stmt("SHOW PARAMETERS IN TASK analytics.public.refresh_task");
+    snowflake().verified_stmt("SHOW PARAMETERS IN TABLE analytics.public.events");
+
+    match snowflake().verified_stmt("SHOW PARAMETERS LIKE '%TIME%' FOR SESSION") {
+        Statement::ShowParameters {
+            filter: Some(ShowStatementFilter::Like(pattern)),
+            show_in:
+                Some(ShowStatementIn {
+                    clause: ShowStatementInClause::FOR,
+                    parent_type: Some(ShowStatementInParentType::Session),
+                    parent_name: None,
+                }),
+        } => assert_eq!(pattern, "%TIME%"),
+        statement => panic!("unexpected statement: {statement:?}"),
+    }
+}
+
+#[test]
 fn test_parse_show_schemas() {
     snowflake().verified_stmt("SHOW SCHEMAS");
     snowflake().verified_stmt("SHOW TERSE SCHEMAS");

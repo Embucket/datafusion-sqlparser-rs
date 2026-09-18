@@ -15546,6 +15546,8 @@ impl<'a> Parser<'a> {
                 session,
                 global,
             })
+        } else if self.parse_keyword(Keyword::PARAMETERS) && dialect_of!(self is SnowflakeDialect) {
+            self.parse_show_parameters()
         } else if self.parse_keyword(Keyword::STATUS)
             && dialect_of!(self is MySqlDialect | GenericDialect)
         {
@@ -15569,6 +15571,63 @@ impl<'a> Parser<'a> {
                 variable: self.parse_identifiers()?,
             })
         }
+    }
+
+    fn parse_show_parameters(&mut self) -> Result<Statement, ParserError> {
+        let filter = if self.parse_keyword(Keyword::LIKE) {
+            Some(ShowStatementFilter::Like(self.parse_literal_string()?))
+        } else {
+            None
+        };
+
+        let clause = match self.parse_one_of_keywords(&[Keyword::IN, Keyword::FOR]) {
+            Some(Keyword::IN) => Some(ShowStatementInClause::IN),
+            Some(Keyword::FOR) => Some(ShowStatementInClause::FOR),
+            None => None,
+            _ => {
+                return self.expected_ref("IN or FOR", self.peek_token_ref());
+            }
+        };
+
+        let show_in = if let Some(clause) = clause {
+            let parent_type =
+                match self.parse_one_of_keywords(&[
+                    Keyword::SESSION,
+                    Keyword::ACCOUNT,
+                    Keyword::USER,
+                    Keyword::WAREHOUSE,
+                    Keyword::DATABASE,
+                    Keyword::SCHEMA,
+                    Keyword::TASK,
+                    Keyword::TABLE,
+                ]) {
+                    Some(Keyword::SESSION) => ShowStatementInParentType::Session,
+                    Some(Keyword::ACCOUNT) => ShowStatementInParentType::Account,
+                    Some(Keyword::USER) => ShowStatementInParentType::User,
+                    Some(Keyword::WAREHOUSE) => ShowStatementInParentType::Warehouse,
+                    Some(Keyword::DATABASE) => ShowStatementInParentType::Database,
+                    Some(Keyword::SCHEMA) => ShowStatementInParentType::Schema,
+                    Some(Keyword::TASK) => ShowStatementInParentType::Task,
+                    Some(Keyword::TABLE) => ShowStatementInParentType::Table,
+                    _ => return self.expected_ref(
+                        "one of SESSION, ACCOUNT, USER, WAREHOUSE, DATABASE, SCHEMA, TASK or TABLE",
+                        self.peek_token_ref(),
+                    ),
+                };
+            let parent_name = match parent_type {
+                ShowStatementInParentType::Session | ShowStatementInParentType::Account => None,
+                _ => self.maybe_parse(|parser| parser.parse_object_name(false))?,
+            };
+            Some(ShowStatementIn {
+                clause,
+                parent_type: Some(parent_type),
+                parent_name,
+            })
+        } else {
+            None
+        };
+
+        Ok(Statement::ShowParameters { filter, show_in })
     }
 
     fn parse_show_charset(&mut self, is_shorthand: bool) -> Result<Statement, ParserError> {

@@ -767,6 +767,7 @@ define_keywords!(
     PACK_KEYS,
     PARALLEL,
     PARAMETER,
+    PARAMETERS,
     PARQUET,
     PART,
     PARTIAL,
