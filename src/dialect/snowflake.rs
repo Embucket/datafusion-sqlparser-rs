@@ -24,8 +24,8 @@ use crate::ast::helpers::key_value_options::{
 use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
 use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
 use crate::ast::helpers::stmt_data_loading::{
-    AlterStageOperation, FileStagingCommand, StageLoadSelectItem, StageLoadSelectItemKind,
-    StageParamsObject,
+    AlterFileFormatOperation, AlterStageOperation, FileStagingCommand, StageLoadSelectItem,
+    StageLoadSelectItemKind, StageParamsObject,
 };
 use crate::ast::{
     AlterTable, AlterTableOperation, AlterTableType, CatalogSyncNamespaceMode, CloudProviderParams,
@@ -303,6 +303,10 @@ impl Dialect for SnowflakeDialect {
             return Some(parse_alter_stage(parser));
         }
 
+        if parser.parse_keywords(&[Keyword::ALTER, Keyword::FILE, Keyword::FORMAT]) {
+            return Some(parse_alter_file_format(parser));
+        }
+
         if parser.parse_keyword(Keyword::CREATE) {
             // possibly CREATE STAGE
             //[ OR  REPLACE ]
@@ -489,6 +493,10 @@ impl Dialect for SnowflakeDialect {
     }
 
     fn supports_describe_stage(&self) -> bool {
+        true
+    }
+
+    fn supports_file_format_commands(&self) -> bool {
         true
     }
 
@@ -1453,6 +1461,37 @@ fn parse_alter_stage(parser: &mut Parser) -> Result<Statement, ParserError> {
     };
 
     Ok(Statement::AlterStage {
+        if_exists,
+        name,
+        operation,
+    })
+}
+
+fn parse_alter_file_format(parser: &mut Parser) -> Result<Statement, ParserError> {
+    let if_exists = parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+    let name = parser.parse_object_name(false)?;
+    let operation = if parser.parse_keyword(Keyword::RENAME) {
+        parser.expect_keyword(Keyword::TO)?;
+        AlterFileFormatOperation::RenameTo {
+            new_name: parser.parse_object_name(false)?,
+        }
+    } else if parser.parse_keyword(Keyword::SET) {
+        let options = parser.parse_key_value_options(false, &[Keyword::COMMENT])?;
+        let comment = if parser.parse_keyword(Keyword::COMMENT) {
+            parser.expect_token(&Token::Eq)?;
+            Some(parser.parse_comment_value()?)
+        } else {
+            None
+        };
+        if options.options.is_empty() && comment.is_none() {
+            return parser.expected_ref("a file format property", parser.peek_token_ref());
+        }
+        AlterFileFormatOperation::Set { options, comment }
+    } else {
+        return parser.expected_ref("RENAME TO or SET", parser.peek_token_ref());
+    };
+
+    Ok(Statement::AlterFileFormat {
         if_exists,
         name,
         operation,

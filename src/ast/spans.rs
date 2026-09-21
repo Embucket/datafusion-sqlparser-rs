@@ -285,6 +285,7 @@ impl Spanned for Values {
 /// - [Statement::ShowColumns]
 /// - [Statement::ShowTables]
 /// - [Statement::ShowStages]
+/// - [Statement::ShowFileFormats]
 /// - [Statement::ShowCollation]
 /// - [Statement::StartTransaction]
 /// - [Statement::Comment]
@@ -300,6 +301,7 @@ impl Spanned for Values {
 /// - [Statement::CreateMacro]
 /// - [Statement::CreateStage]
 /// - [Statement::AlterStage]
+/// - [Statement::AlterFileFormat]
 /// - [Statement::Assert]
 /// - [Statement::Grant]
 /// - [Statement::Revoke]
@@ -309,6 +311,7 @@ impl Spanned for Values {
 /// - [Statement::Kill]
 /// - [Statement::ExplainTable]
 /// - [Statement::DescribeStage]
+/// - [Statement::DescribeFileFormat]
 /// - [Statement::Explain]
 /// - [Statement::Savepoint]
 /// - [Statement::ReleaseSavepoint]
@@ -447,6 +450,7 @@ impl Spanned for Statement {
             Statement::ShowColumns { .. } => Span::empty(),
             Statement::ShowTables { .. } => Span::empty(),
             Statement::ShowStages { .. } => Span::empty(),
+            Statement::ShowFileFormats { .. } => Span::empty(),
             Statement::ShowCollation { .. } => Span::empty(),
             Statement::ShowCharset { .. } => Span::empty(),
             Statement::Use(u) => u.span(),
@@ -465,6 +469,7 @@ impl Spanned for Statement {
             Statement::CreateMacro { .. } => Span::empty(),
             Statement::CreateStage { .. } => Span::empty(),
             Statement::AlterStage { .. } => Span::empty(),
+            Statement::AlterFileFormat { .. } => Span::empty(),
             Statement::CreateFileFormat { .. } => Span::empty(),
             Statement::Assert { .. } => Span::empty(),
             Statement::Grant { .. } => Span::empty(),
@@ -476,6 +481,7 @@ impl Spanned for Statement {
             Statement::Kill { .. } => Span::empty(),
             Statement::ExplainTable { .. } => Span::empty(),
             Statement::DescribeStage { .. } => Span::empty(),
+            Statement::DescribeFileFormat { .. } => Span::empty(),
             Statement::Explain { .. } => Span::empty(),
             Statement::Savepoint { .. } => Span::empty(),
             Statement::ReleaseSavepoint { .. } => Span::empty(),

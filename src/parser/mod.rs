@@ -7394,6 +7394,10 @@ impl<'a> Parser<'a> {
             ObjectType::Sequence
         } else if self.parse_keyword(Keyword::STAGE) {
             ObjectType::Stage
+        } else if self.dialect.supports_file_format_commands()
+            && self.parse_keywords(&[Keyword::FILE, Keyword::FORMAT])
+        {
+            ObjectType::FileFormat
         } else if self.parse_keyword(Keyword::TYPE) {
             ObjectType::Type
         } else if self.parse_keyword(Keyword::USER) {
@@ -7427,7 +7431,7 @@ impl<'a> Parser<'a> {
             };
         } else {
             return self.expected_ref(
-                "COLLATION, CONNECTOR, DATABASE, EXTENSION, FUNCTION, INDEX, OPERATOR, POLICY, PROCEDURE, ROLE, SCHEMA, SECRET, SEQUENCE, STAGE, TABLE, TRIGGER, TYPE, VIEW, MATERIALIZED VIEW or USER after DROP",
+                "COLLATION, CONNECTOR, DATABASE, EXTENSION, FILE FORMAT, FUNCTION, INDEX, OPERATOR, POLICY, PROCEDURE, ROLE, SCHEMA, SECRET, SEQUENCE, STAGE, TABLE, TRIGGER, TYPE, VIEW, MATERIALIZED VIEW or USER after DROP",
                 self.peek_token_ref(),
             );
         };
@@ -14030,6 +14034,16 @@ impl<'a> Parser<'a> {
             });
         }
 
+        if describe_alias != DescribeAlias::Explain
+            && self.dialect.supports_file_format_commands()
+            && self.parse_keywords(&[Keyword::FILE, Keyword::FORMAT])
+        {
+            return Ok(Statement::DescribeFileFormat {
+                describe_alias,
+                name: self.parse_object_name(false)?,
+            });
+        }
+
         match self.maybe_parse(|parser| parser.parse_statement())? {
             Some(Statement::Explain { .. }) | Some(Statement::ExplainTable { .. }) => Err(
                 ParserError::ParserError("Explain must be root of the plan".to_string()),
@@ -15540,6 +15554,18 @@ impl<'a> Parser<'a> {
             Ok(Statement::ShowStages {
                 show_options: self.parse_show_stmt_options()?,
             })
+        } else if self.dialect.supports_file_format_commands()
+            && self.parse_keywords(&[Keyword::FILE, Keyword::FORMATS])
+        {
+            if terse || extended || full || session || global || external {
+                Err(ParserError::ParserError(
+                    "SHOW FILE FORMATS does not support SHOW modifiers".to_string(),
+                ))
+            } else {
+                Ok(Statement::ShowFileFormats {
+                    show_options: self.parse_show_stmt_options()?,
+                })
+            }
         } else if self.parse_keywords(&[Keyword::MATERIALIZED, Keyword::VIEWS]) {
             Ok(self.parse_show_views(terse, true)?)
         } else if self.parse_keyword(Keyword::VIEWS) {

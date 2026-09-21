@@ -1257,6 +1257,12 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if this dialect supports Snowflake-style named file format
+    /// lifecycle commands (`ALTER`, `DROP`, `SHOW`, and `DESCRIBE`).
+    fn supports_file_format_commands(&self) -> bool {
+        false
+    }
+
     /// Returns true if this dialect supports the `COMMENT` statement
     fn supports_comment_on(&self) -> bool {
         false

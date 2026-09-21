@@ -448,6 +448,7 @@ define_keywords!(
     FORCE_QUOTE,
     FOREIGN,
     FORMAT,
+    FORMATS,
     FORMATTED,
     FORWARD,
     FRAME_ROW,
