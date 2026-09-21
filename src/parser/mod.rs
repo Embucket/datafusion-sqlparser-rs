@@ -14020,6 +14020,16 @@ impl<'a> Parser<'a> {
             }
         }
 
+        if describe_alias != DescribeAlias::Explain
+            && self.dialect.supports_describe_stage()
+            && self.parse_keyword(Keyword::STAGE)
+        {
+            return Ok(Statement::DescribeStage {
+                describe_alias,
+                stage_name: self.parse_object_name(false)?,
+            });
+        }
+
         match self.maybe_parse(|parser| parser.parse_statement())? {
             Some(Statement::Explain { .. }) | Some(Statement::ExplainTable { .. }) => Err(
                 ParserError::ParserError("Explain must be root of the plan".to_string()),
@@ -15526,6 +15536,10 @@ impl<'a> Parser<'a> {
             Ok(self.parse_show_columns(extended, full)?)
         } else if self.parse_keyword(Keyword::TABLES) {
             Ok(self.parse_show_tables(terse, extended, full, external)?)
+        } else if self.dialect.supports_show_stages() && self.parse_keyword(Keyword::STAGES) {
+            Ok(Statement::ShowStages {
+                show_options: self.parse_show_stmt_options()?,
+            })
         } else if self.parse_keywords(&[Keyword::MATERIALIZED, Keyword::VIEWS]) {
             Ok(self.parse_show_views(terse, true)?)
         } else if self.parse_keyword(Keyword::VIEWS) {

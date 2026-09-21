@@ -3410,6 +3410,28 @@ fn parse_describe_view() {
 }
 
 #[test]
+fn parse_describe_stage() {
+    for sql in [
+        "DESCRIBE STAGE analytics.raw.events",
+        "DESC STAGE analytics.raw.events",
+    ] {
+        match snowflake().verified_stmt(sql) {
+            Statement::DescribeStage {
+                describe_alias,
+                stage_name,
+            } => {
+                assert!(matches!(
+                    describe_alias,
+                    DescribeAlias::Describe | DescribeAlias::Desc
+                ));
+                assert_eq!("analytics.raw.events", stage_name.to_string());
+            }
+            statement => panic!("unexpected statement: {statement:?}"),
+        }
+    }
+}
+
+#[test]
 fn parse_use() {
     let valid_object_names = ["mydb", "CATALOG", "DEFAULT"];
     let quote_styles = ['\'', '"', '`'];
@@ -3699,6 +3721,35 @@ fn test_parse_show_tables() {
     snowflake().verified_stmt("SHOW EXTERNAL TABLES STARTS WITH 'abc' LIMIT 20");
     snowflake()
         .verified_stmt("SHOW EXTERNAL TABLES IN SCHEMA STARTS WITH 'abc' LIMIT 20 FROM 'xyz'");
+}
+
+#[test]
+fn test_parse_show_stages() {
+    snowflake().verified_stmt("SHOW STAGES");
+    snowflake().verified_stmt("SHOW STAGES LIKE 'events%'");
+    snowflake().verified_stmt("SHOW STAGES IN ACCOUNT");
+    snowflake().verified_stmt("SHOW STAGES IN DATABASE analytics");
+    snowflake().verified_stmt("SHOW STAGES IN SCHEMA analytics.raw");
+
+    match snowflake().verified_stmt("SHOW STAGES LIKE 'events%' IN SCHEMA analytics.raw") {
+        Statement::ShowStages { show_options } => {
+            assert!(matches!(
+                show_options.filter_position,
+                Some(ShowStatementFilterPosition::Infix(
+                    ShowStatementFilter::Like(ref pattern)
+                )) if pattern == "events%"
+            ));
+            assert!(matches!(
+                show_options.show_in,
+                Some(ShowStatementIn {
+                    parent_type: Some(ShowStatementInParentType::Schema),
+                    parent_name: Some(ref name),
+                    ..
+                }) if name.to_string() == "analytics.raw"
+            ));
+        }
+        statement => panic!("unexpected statement: {statement:?}"),
+    }
 }
 
 #[test]

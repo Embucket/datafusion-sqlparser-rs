@@ -1247,6 +1247,16 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if this dialect supports Snowflake-style `SHOW STAGES`.
+    fn supports_show_stages(&self) -> bool {
+        false
+    }
+
+    /// Returns true if this dialect supports `DESC[RIBE] STAGE <name>`.
+    fn supports_describe_stage(&self) -> bool {
+        false
+    }
+
     /// Returns true if this dialect supports the `COMMENT` statement
     fn supports_comment_on(&self) -> bool {
         false
