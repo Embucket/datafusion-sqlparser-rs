@@ -299,6 +299,7 @@ impl Spanned for Values {
 /// - [Statement::CreateProcedure]
 /// - [Statement::CreateMacro]
 /// - [Statement::CreateStage]
+/// - [Statement::AlterStage]
 /// - [Statement::Assert]
 /// - [Statement::Grant]
 /// - [Statement::Revoke]
@@ -463,6 +464,7 @@ impl Spanned for Statement {
             Statement::CreateProcedure { .. } => Span::empty(),
             Statement::CreateMacro { .. } => Span::empty(),
             Statement::CreateStage { .. } => Span::empty(),
+            Statement::AlterStage { .. } => Span::empty(),
             Statement::CreateFileFormat { .. } => Span::empty(),
             Statement::Assert { .. } => Span::empty(),
             Statement::Grant { .. } => Span::empty(),

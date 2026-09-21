@@ -26,7 +26,7 @@ use alloc::{
 };
 use helpers::{
     attached_token::AttachedToken,
-    stmt_data_loading::{FileStagingCommand, StageLoadSelectItemKind},
+    stmt_data_loading::{AlterStageOperation, FileStagingCommand, StageLoadSelectItemKind},
 };
 
 use core::cmp::Ordering;
@@ -4535,6 +4535,18 @@ pub enum Statement {
         comment: Option<String>,
     },
     /// ```sql
+    /// ALTER STAGE
+    /// ```
+    /// See <https://docs.snowflake.com/en/sql-reference/sql/alter-stage>
+    AlterStage {
+        /// `IF EXISTS` flag.
+        if_exists: bool,
+        /// Stage name.
+        name: ObjectName,
+        /// Stage alteration to perform.
+        operation: AlterStageOperation,
+    },
+    /// ```sql
     /// CREATE FILE FORMAT
     /// ```
     /// See <https://docs.snowflake.com/en/sql-reference/sql/create-file-format>
@@ -6305,6 +6317,44 @@ impl fmt::Display for Statement {
                     write!(f, " COMMENT='{}'", comment.as_ref().unwrap())?;
                 }
                 Ok(())
+            }
+            Statement::AlterStage {
+                if_exists,
+                name,
+                operation,
+            } => {
+                write!(
+                    f,
+                    "ALTER STAGE {if_exists}{name}",
+                    if_exists = if *if_exists { "IF EXISTS " } else { "" },
+                )?;
+                match operation {
+                    AlterStageOperation::RenameTo { new_name } => {
+                        write!(f, " RENAME TO {new_name}")
+                    }
+                    AlterStageOperation::Set {
+                        stage_params,
+                        directory_table_params,
+                        file_format,
+                        copy_options,
+                        comment,
+                    } => {
+                        write!(f, " SET{stage_params}")?;
+                        if !directory_table_params.options.is_empty() {
+                            write!(f, " DIRECTORY=({directory_table_params})")?;
+                        }
+                        if !file_format.options.is_empty() {
+                            write!(f, " FILE_FORMAT=({file_format})")?;
+                        }
+                        if !copy_options.options.is_empty() {
+                            write!(f, " COPY_OPTIONS=({copy_options})")?;
+                        }
+                        if let Some(comment) = comment {
+                            write!(f, " COMMENT='{comment}'")?;
+                        }
+                        Ok(())
+                    }
+                }
             }
             Statement::CreateFileFormat {
                 or_replace,

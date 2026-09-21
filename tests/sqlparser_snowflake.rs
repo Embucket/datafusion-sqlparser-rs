@@ -20,7 +20,9 @@
 //! generic dialect is also tested (on the inputs it can handle).
 
 use sqlparser::ast::helpers::key_value_options::{KeyValueOption, KeyValueOptionKind};
-use sqlparser::ast::helpers::stmt_data_loading::{StageLoadSelectItem, StageLoadSelectItemKind};
+use sqlparser::ast::helpers::stmt_data_loading::{
+    AlterStageOperation, StageLoadSelectItem, StageLoadSelectItemKind,
+};
 use sqlparser::ast::*;
 use sqlparser::dialect::{Dialect, GenericDialect, SnowflakeDialect};
 use sqlparser::parser::{ParserError, ParserOptions};
@@ -2183,6 +2185,72 @@ fn test_create_stage() {
         snowflake().verified_stmt(extended_sql).to_string(),
         extended_sql
     );
+}
+
+#[test]
+fn test_alter_stage() {
+    let rename_sql = "ALTER STAGE IF EXISTS analytics.raw.events RENAME TO archived_events";
+    match snowflake().verified_stmt(rename_sql) {
+        Statement::AlterStage {
+            if_exists,
+            name,
+            operation: AlterStageOperation::RenameTo { new_name },
+        } => {
+            assert!(if_exists);
+            assert_eq!("analytics.raw.events", name.to_string());
+            assert_eq!("archived_events", new_name.to_string());
+        }
+        _ => unreachable!(),
+    }
+    assert_eq!(
+        snowflake().verified_stmt(rename_sql).to_string(),
+        rename_sql
+    );
+
+    let set_sql = concat!(
+        "ALTER STAGE analytics.raw.events SET ",
+        "URL='s3://bucket/path/' STORAGE_INTEGRATION=my_int ",
+        "ENDPOINT='s3.us-east-2.amazonaws.com' ",
+        "CREDENTIALS=(AWS_KEY_ID='key' AWS_SECRET_KEY='secret') ",
+        "ENCRYPTION=(TYPE='AWS_SSE_KMS' KMS_KEY_ID='id') ",
+        "DIRECTORY=(ENABLE=true AUTO_REFRESH=false) ",
+        "FILE_FORMAT=(TYPE=PARQUET BINARY_AS_TEXT=false) ",
+        "COPY_OPTIONS=(ON_ERROR='SKIP_FILE') COMMENT='updated'"
+    );
+    match snowflake().verified_stmt(set_sql) {
+        Statement::AlterStage {
+            if_exists,
+            name,
+            operation:
+                AlterStageOperation::Set {
+                    stage_params,
+                    directory_table_params,
+                    file_format,
+                    copy_options,
+                    comment,
+                },
+        } => {
+            assert!(!if_exists);
+            assert_eq!("analytics.raw.events", name.to_string());
+            assert_eq!(Some("s3://bucket/path/"), stage_params.url.as_deref());
+            assert_eq!(Some("my_int"), stage_params.storage_integration.as_deref());
+            assert_eq!(2, stage_params.credentials.options.len());
+            assert_eq!(2, stage_params.encryption.options.len());
+            assert_eq!(2, directory_table_params.options.len());
+            assert_eq!(2, file_format.options.len());
+            assert_eq!(1, copy_options.options.len());
+            assert_eq!(Some("updated"), comment.as_deref());
+        }
+        _ => unreachable!(),
+    }
+    assert_eq!(snowflake().verified_stmt(set_sql).to_string(), set_sql);
+
+    for unsupported in [
+        "ALTER STAGE analytics.raw.events SET",
+        "ALTER STAGE analytics.raw.events REFRESH",
+    ] {
+        assert!(snowflake().parse_sql_statements(unsupported).is_err());
+    }
 }
 
 #[test]
