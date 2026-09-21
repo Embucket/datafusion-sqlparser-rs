@@ -4255,6 +4255,15 @@ pub enum Statement {
         show_options: ShowStatementOptions,
     },
     /// ```sql
+    /// SHOW SEQUENCES [ LIKE '<pattern>' ] [ IN { ACCOUNT | DATABASE | SCHEMA } ]
+    /// ```
+    /// Snowflake-specific statement.
+    /// <https://docs.snowflake.com/en/sql-reference/sql/show-sequences>
+    ShowSequences {
+        /// Additional options for filtering and scoping the sequence listing.
+        show_options: ShowStatementOptions,
+    },
+    /// ```sql
     /// SHOW VIEWS
     /// ```
     ShowViews {
@@ -4720,6 +4729,18 @@ pub enum Statement {
         name: ObjectName,
     },
     /// ```sql
+    /// DESC[RIBE] SEQUENCE <name>
+    /// ```
+    /// Snowflake-specific statement.
+    /// <https://docs.snowflake.com/en/sql-reference/sql/desc-sequence>
+    DescribeSequence {
+        /// `DESC | DESCRIBE` spelling used by the input statement.
+        describe_alias: DescribeAlias,
+        /// Sequence name.
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        name: ObjectName,
+    },
+    /// ```sql
     /// [EXPLAIN | DESC | DESCRIBE]  <statement>
     /// ```
     Explain {
@@ -4803,6 +4824,10 @@ pub enum Statement {
     /// ```
     /// Define a new sequence:
     CreateSequence {
+        /// `OR REPLACE` flag.
+        or_replace: bool,
+        /// `OR ALTER` flag.
+        or_alter: bool,
         /// Whether the sequence is temporary.
         temporary: bool,
         /// `IF NOT EXISTS` flag.
@@ -4815,6 +4840,19 @@ pub enum Statement {
         sequence_options: Vec<SequenceOptions>,
         /// Optional `OWNED BY` target.
         owned_by: Option<ObjectName>,
+    },
+    /// ```sql
+    /// ALTER SEQUENCE [ IF EXISTS ] <name> { RENAME TO <new_name> | SET ... | UNSET COMMENT }
+    /// ```
+    /// Snowflake-specific statement.
+    AlterSequence {
+        /// `IF EXISTS` flag.
+        if_exists: bool,
+        /// Sequence name.
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        name: ObjectName,
+        /// Sequence alteration to perform.
+        operation: AlterSequenceOperation,
     },
     /// A `CREATE DOMAIN` statement.
     CreateDomain(CreateDomain),
@@ -5224,6 +5262,10 @@ impl fmt::Display for Statement {
                 describe_alias,
                 name,
             } => write!(f, "{describe_alias} FILE FORMAT {name}"),
+            Statement::DescribeSequence {
+                describe_alias,
+                name,
+            } => write!(f, "{describe_alias} SEQUENCE {name}"),
             Statement::Explain {
                 describe_alias,
                 verbose,
@@ -6041,6 +6083,9 @@ impl fmt::Display for Statement {
             Statement::ShowFileFormats { show_options } => {
                 write!(f, "SHOW FILE FORMATS{show_options}")
             }
+            Statement::ShowSequences { show_options } => {
+                write!(f, "SHOW SEQUENCES{show_options}")
+            }
             Statement::ShowViews {
                 terse,
                 materialized,
@@ -6297,6 +6342,8 @@ impl fmt::Display for Statement {
                 }
             }
             Statement::CreateSequence {
+                or_replace,
+                or_alter,
                 temporary,
                 if_not_exists,
                 name,
@@ -6313,7 +6360,9 @@ impl fmt::Display for Statement {
                 };
                 write!(
                     f,
-                    "CREATE {temporary}SEQUENCE {if_not_exists}{name}{as_type}",
+                    "CREATE {or_replace}{or_alter}{temporary}SEQUENCE {if_not_exists}{name}{as_type}",
+                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
+                    or_alter = if *or_alter { "OR ALTER " } else { "" },
                     if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
                     temporary = if *temporary { "TEMPORARY " } else { "" },
                     name = name,
@@ -6326,6 +6375,30 @@ impl fmt::Display for Statement {
                     write!(f, " OWNED BY {ob}")?;
                 }
                 write!(f, "")
+            }
+            Statement::AlterSequence {
+                if_exists,
+                name,
+                operation,
+            } => {
+                write!(
+                    f,
+                    "ALTER SEQUENCE {if_exists}{name}",
+                    if_exists = if *if_exists { "IF EXISTS " } else { "" },
+                )?;
+                match operation {
+                    AlterSequenceOperation::RenameTo { new_name } => {
+                        write!(f, " RENAME TO {new_name}")
+                    }
+                    AlterSequenceOperation::SetOptions(options) => {
+                        f.write_str(" SET")?;
+                        for option in options {
+                            write!(f, "{option}")?;
+                        }
+                        Ok(())
+                    }
+                    AlterSequenceOperation::UnsetComment => f.write_str(" UNSET COMMENT"),
+                }
             }
             Statement::CreateStage {
                 or_replace,
@@ -6682,6 +6755,10 @@ pub enum SequenceOptions {
     Cache(Expr),
     /// `CYCLE` or `NO CYCLE` option.
     Cycle(bool),
+    /// Snowflake `ORDER` or `NOORDER` option.
+    Order(bool),
+    /// Snowflake sequence comment.
+    Comment(String),
 }
 
 impl fmt::Display for SequenceOptions {
@@ -6721,8 +6798,35 @@ impl fmt::Display for SequenceOptions {
             SequenceOptions::Cycle(no) => {
                 write!(f, " {}CYCLE", if *no { "NO " } else { "" })
             }
+            SequenceOptions::Order(ordered) => {
+                f.write_str(if *ordered { " ORDER" } else { " NOORDER" })
+            }
+            SequenceOptions::Comment(comment) => {
+                write!(
+                    f,
+                    " COMMENT = '{}'",
+                    value::escape_single_quote_string(comment)
+                )
+            }
         }
     }
+}
+
+/// An operation supported by Snowflake's `ALTER SEQUENCE` statement.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterSequenceOperation {
+    /// Rename a sequence.
+    RenameTo {
+        /// New sequence name.
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        new_name: ObjectName,
+    },
+    /// Set one or more sequence properties.
+    SetOptions(Vec<SequenceOptions>),
+    /// Remove the sequence comment.
+    UnsetComment,
 }
 
 /// Assignment for a `SET` statement (name [=|TO] value)

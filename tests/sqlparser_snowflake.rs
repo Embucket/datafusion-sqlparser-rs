@@ -5667,3 +5667,92 @@ fn test_named_file_format_lifecycle() {
         );
     }
 }
+
+/// Snowflake sequence syntax:
+/// <https://docs.snowflake.com/en/sql-reference/sql/create-sequence>
+/// <https://docs.snowflake.com/en/sql-reference/sql/alter-sequence>
+/// <https://docs.snowflake.com/en/sql-reference/sql/show-sequences>
+#[test]
+fn test_sequence_lifecycle() {
+    let create = snowflake().one_statement_parses_to(
+        "CREATE OR REPLACE SEQUENCE analytics.raw.event_ids WITH START WITH = 10 INCREMENT BY = 5 ORDER COMMENT = 'owner''s sequence'",
+        "CREATE OR REPLACE SEQUENCE analytics.raw.event_ids START WITH 10 INCREMENT BY 5 ORDER COMMENT = 'owner''s sequence'",
+    );
+    match create {
+        Statement::CreateSequence {
+            or_replace,
+            or_alter,
+            temporary,
+            if_not_exists,
+            name,
+            sequence_options,
+            ..
+        } => {
+            assert!(or_replace);
+            assert!(!or_alter);
+            assert!(!temporary);
+            assert!(!if_not_exists);
+            assert_eq!("analytics.raw.event_ids", name.to_string());
+            assert_eq!(4, sequence_options.len());
+            assert!(matches!(sequence_options[2], SequenceOptions::Order(true)));
+            assert!(matches!(
+                &sequence_options[3],
+                SequenceOptions::Comment(comment) if comment == "owner's sequence"
+            ));
+        }
+        statement => panic!("unexpected statement: {statement:?}"),
+    }
+
+    match snowflake().verified_stmt(
+        "CREATE OR ALTER SEQUENCE analytics.raw.event_ids INCREMENT -3 NOORDER COMMENT = 'updated'",
+    ) {
+        Statement::CreateSequence {
+            or_replace,
+            or_alter,
+            sequence_options,
+            ..
+        } => {
+            assert!(!or_replace);
+            assert!(or_alter);
+            assert_eq!(3, sequence_options.len());
+        }
+        statement => panic!("unexpected statement: {statement:?}"),
+    }
+
+    match snowflake().verified_stmt(
+        "ALTER SEQUENCE IF EXISTS analytics.raw.event_ids SET INCREMENT BY 7 NOORDER COMMENT = 'changed'",
+    ) {
+        Statement::AlterSequence {
+            if_exists,
+            name,
+            operation: AlterSequenceOperation::SetOptions(options),
+        } => {
+            assert!(if_exists);
+            assert_eq!("analytics.raw.event_ids", name.to_string());
+            assert_eq!(3, options.len());
+        }
+        statement => panic!("unexpected statement: {statement:?}"),
+    }
+
+    for sql in [
+        "ALTER SEQUENCE analytics.raw.event_ids RENAME TO archived_event_ids",
+        "ALTER SEQUENCE analytics.raw.event_ids UNSET COMMENT",
+        "DESCRIBE SEQUENCE analytics.raw.event_ids",
+        "DESC SEQUENCE analytics.raw.event_ids",
+        "SHOW SEQUENCES LIKE 'EVENT%' IN SCHEMA analytics.raw",
+        "DROP SEQUENCE IF EXISTS analytics.raw.event_ids RESTRICT",
+    ] {
+        snowflake().verified_stmt(sql);
+    }
+
+    for invalid in [
+        "ALTER SEQUENCE analytics.raw.event_ids SET",
+        "ALTER SEQUENCE analytics.raw.event_ids SET START = 1",
+        "SHOW TERSE SEQUENCES",
+    ] {
+        assert!(
+            snowflake().parse_sql_statements(invalid).is_err(),
+            "{invalid} should fail"
+        );
+    }
+}
