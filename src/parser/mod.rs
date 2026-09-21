@@ -5189,6 +5189,12 @@ impl<'a> Parser<'a> {
             self.parse_create_secret(or_replace, temporary, persistent)
         } else if self.parse_keyword(Keyword::USER) {
             self.parse_create_user(or_replace).map(Into::into)
+        } else if self.parse_keyword(Keyword::SEQUENCE) {
+            if (or_replace || or_alter) && !dialect_of!(self is SnowflakeDialect) {
+                self.expected_ref("supported object type", self.peek_token_ref())
+            } else {
+                self.parse_create_sequence(or_replace, or_alter, temporary)
+            }
         } else if or_replace {
             self.expected_ref(
                 "[EXTERNAL] TABLE or [MATERIALIZED] VIEW or FUNCTION after CREATE OR REPLACE",
@@ -5208,8 +5214,6 @@ impl<'a> Parser<'a> {
             self.parse_create_database()
         } else if self.parse_keyword(Keyword::ROLE) {
             self.parse_create_role().map(Into::into)
-        } else if self.parse_keyword(Keyword::SEQUENCE) {
-            self.parse_create_sequence(temporary)
         } else if self.parse_keyword(Keyword::COLLATION) {
             self.parse_create_collation().map(Into::into)
         } else if self.parse_keyword(Keyword::TYPE) {
@@ -10750,6 +10754,7 @@ impl<'a> Parser<'a> {
             Keyword::CONNECTOR,
             Keyword::ICEBERG,
             Keyword::SCHEMA,
+            Keyword::SEQUENCE,
             Keyword::USER,
             Keyword::OPERATOR,
         ])?;
@@ -10799,12 +10804,49 @@ impl<'a> Parser<'a> {
             Keyword::ROLE => self.parse_alter_role(),
             Keyword::POLICY => self.parse_alter_policy().map(Into::into),
             Keyword::CONNECTOR => self.parse_alter_connector(),
+            Keyword::SEQUENCE => {
+                if dialect_of!(self is SnowflakeDialect) {
+                    self.parse_alter_sequence()
+                } else {
+                    self.expected_ref("supported ALTER object type", self.peek_token_ref())
+                }
+            }
             Keyword::USER => self.parse_alter_user().map(Into::into),
             // unreachable because expect_one_of_keywords used above
             unexpected_keyword => Err(ParserError::ParserError(
-                format!("Internal parser error: expected any of {{VIEW, TYPE, COLLATION, TABLE, INDEX, FUNCTION, AGGREGATE, ROLE, POLICY, CONNECTOR, ICEBERG, SCHEMA, USER, OPERATOR}}, got {unexpected_keyword:?}"),
+                format!("Internal parser error: expected any of {{VIEW, TYPE, COLLATION, TABLE, INDEX, FUNCTION, AGGREGATE, ROLE, POLICY, CONNECTOR, ICEBERG, SCHEMA, SEQUENCE, USER, OPERATOR}}, got {unexpected_keyword:?}"),
             )),
         }
+    }
+
+    fn parse_alter_sequence(&mut self) -> Result<Statement, ParserError> {
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        let operation = if self.parse_keyword(Keyword::RENAME) {
+            self.expect_keyword(Keyword::TO)?;
+            AlterSequenceOperation::RenameTo {
+                new_name: self.parse_object_name(false)?,
+            }
+        } else if self.parse_keyword(Keyword::SET) {
+            let options = self.parse_snowflake_sequence_options(false)?;
+            if options.is_empty() {
+                return self.expected_ref(
+                    "INCREMENT, ORDER, NOORDER, or COMMENT after ALTER SEQUENCE SET",
+                    self.peek_token_ref(),
+                );
+            }
+            AlterSequenceOperation::SetOptions(options)
+        } else if self.parse_keywords(&[Keyword::UNSET, Keyword::COMMENT]) {
+            AlterSequenceOperation::UnsetComment
+        } else {
+            return self.expected_ref("RENAME, SET, or UNSET", self.peek_token_ref());
+        };
+
+        Ok(Statement::AlterSequence {
+            if_exists,
+            name,
+            operation,
+        })
     }
 
     fn parse_alter_aggregate_signature(
@@ -14044,6 +14086,16 @@ impl<'a> Parser<'a> {
             });
         }
 
+        if describe_alias != DescribeAlias::Explain
+            && dialect_of!(self is SnowflakeDialect)
+            && self.parse_keyword(Keyword::SEQUENCE)
+        {
+            return Ok(Statement::DescribeSequence {
+                describe_alias,
+                name: self.parse_object_name(false)?,
+            });
+        }
+
         match self.maybe_parse(|parser| parser.parse_statement())? {
             Some(Statement::Explain { .. }) | Some(Statement::ExplainTable { .. }) => Err(
                 ParserError::ParserError("Explain must be root of the plan".to_string()),
@@ -15563,6 +15615,16 @@ impl<'a> Parser<'a> {
                 ))
             } else {
                 Ok(Statement::ShowFileFormats {
+                    show_options: self.parse_show_stmt_options()?,
+                })
+            }
+        } else if dialect_of!(self is SnowflakeDialect) && self.parse_keyword(Keyword::SEQUENCES) {
+            if terse || extended || full || session || global || external {
+                Err(ParserError::ParserError(
+                    "SHOW SEQUENCES does not support SHOW modifiers".to_string(),
+                ))
+            } else {
+                Ok(Statement::ShowSequences {
                     show_options: self.parse_show_stmt_options()?,
                 })
             }
@@ -19872,7 +19934,12 @@ impl<'a> Parser<'a> {
     /// ```
     ///
     /// See [Postgres docs](https://www.postgresql.org/docs/current/sql-createsequence.html) for more details.
-    pub fn parse_create_sequence(&mut self, temporary: bool) -> Result<Statement, ParserError> {
+    pub fn parse_create_sequence(
+        &mut self,
+        or_replace: bool,
+        or_alter: bool,
+        temporary: bool,
+    ) -> Result<Statement, ParserError> {
         //[ IF NOT EXISTS ]
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         //name
@@ -19882,7 +19949,14 @@ impl<'a> Parser<'a> {
         if self.parse_keywords(&[Keyword::AS]) {
             data_type = Some(self.parse_data_type()?)
         }
-        let sequence_options = self.parse_create_sequence_options()?;
+        if dialect_of!(self is SnowflakeDialect) {
+            let _ = self.parse_keyword(Keyword::WITH);
+        }
+        let sequence_options = if dialect_of!(self is SnowflakeDialect) {
+            self.parse_snowflake_sequence_options(true)?
+        } else {
+            self.parse_create_sequence_options()?
+        };
         // [ OWNED BY { table_name.column_name | NONE } ]
         let owned_by = if self.parse_keywords(&[Keyword::OWNED, Keyword::BY]) {
             if self.parse_keywords(&[Keyword::NONE]) {
@@ -19894,6 +19968,8 @@ impl<'a> Parser<'a> {
             None
         };
         Ok(Statement::CreateSequence {
+            or_replace,
+            or_alter,
             temporary,
             if_not_exists,
             name,
@@ -19901,6 +19977,52 @@ impl<'a> Parser<'a> {
             sequence_options,
             owned_by,
         })
+    }
+
+    fn parse_snowflake_sequence_options(
+        &mut self,
+        allow_start: bool,
+    ) -> Result<Vec<SequenceOptions>, ParserError> {
+        let mut sequence_options = vec![];
+        loop {
+            let option = if allow_start && self.parse_keyword(Keyword::START) {
+                let with = self.parse_keyword(Keyword::WITH);
+                let _ = self.consume_token(&Token::Eq);
+                Some(SequenceOptions::StartWith(self.parse_number()?, with))
+            } else if self.parse_keyword(Keyword::INCREMENT) {
+                let by = self.parse_keyword(Keyword::BY);
+                let _ = self.consume_token(&Token::Eq);
+                Some(SequenceOptions::IncrementBy(self.parse_number()?, by))
+            } else if self.parse_keyword(Keyword::ORDER) {
+                Some(SequenceOptions::Order(true))
+            } else if self.parse_keyword(Keyword::NOORDER) {
+                Some(SequenceOptions::Order(false))
+            } else if self.parse_keyword(Keyword::COMMENT) {
+                self.expect_token(&Token::Eq)?;
+                Some(SequenceOptions::Comment(self.parse_literal_string()?))
+            } else if allow_start && self.parse_keyword(Keyword::MINVALUE) {
+                Some(SequenceOptions::MinValue(Some(self.parse_number()?)))
+            } else if allow_start && self.parse_keywords(&[Keyword::NO, Keyword::MINVALUE]) {
+                Some(SequenceOptions::MinValue(None))
+            } else if allow_start && self.parse_keyword(Keyword::MAXVALUE) {
+                Some(SequenceOptions::MaxValue(Some(self.parse_number()?)))
+            } else if allow_start && self.parse_keywords(&[Keyword::NO, Keyword::MAXVALUE]) {
+                Some(SequenceOptions::MaxValue(None))
+            } else if allow_start && self.parse_keyword(Keyword::CACHE) {
+                Some(SequenceOptions::Cache(self.parse_number()?))
+            } else if allow_start && self.parse_keywords(&[Keyword::NO, Keyword::CYCLE]) {
+                Some(SequenceOptions::Cycle(true))
+            } else if allow_start && self.parse_keyword(Keyword::CYCLE) {
+                Some(SequenceOptions::Cycle(false))
+            } else {
+                None
+            };
+            match option {
+                Some(option) => sequence_options.push(option),
+                None => break,
+            }
+        }
+        Ok(sequence_options)
     }
 
     fn parse_create_sequence_options(&mut self) -> Result<Vec<SequenceOptions>, ParserError> {
