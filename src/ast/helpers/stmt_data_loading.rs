@@ -85,6 +85,26 @@ pub enum AlterStageOperation {
     },
 }
 
+/// An operation supported by Snowflake's `ALTER FILE FORMAT` statement.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterFileFormatOperation {
+    /// Rename a named file format.
+    RenameTo {
+        /// New file format name.
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        new_name: ObjectName,
+    },
+    /// Set one or more format-specific properties or the comment.
+    Set {
+        /// Format-specific options.
+        options: KeyValueOptions,
+        /// Optional comment replacement.
+        comment: Option<String>,
+    },
+}
+
 /// This enum enables support for both standard SQL select item expressions
 /// and Snowflake-specific ones for data loading.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

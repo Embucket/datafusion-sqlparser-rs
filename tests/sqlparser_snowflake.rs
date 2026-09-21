@@ -21,7 +21,7 @@
 
 use sqlparser::ast::helpers::key_value_options::{KeyValueOption, KeyValueOptionKind};
 use sqlparser::ast::helpers::stmt_data_loading::{
-    AlterStageOperation, StageLoadSelectItem, StageLoadSelectItemKind,
+    AlterFileFormatOperation, AlterStageOperation, StageLoadSelectItem, StageLoadSelectItemKind,
 };
 use sqlparser::ast::*;
 use sqlparser::dialect::{Dialect, GenericDialect, SnowflakeDialect};
@@ -5565,5 +5565,105 @@ fn test_structured_object_type_errors() {
         "CREATE TABLE t (o OBJECT(city VARCHAR)",
     ] {
         assert!(snowflake().parse_sql_statements(sql).is_err(), "{sql}");
+    }
+}
+
+#[test]
+fn test_named_file_format_lifecycle() {
+    let rename_sql =
+        "ALTER FILE FORMAT IF EXISTS analytics.raw.csv_format RENAME TO archived_format";
+    match snowflake().verified_stmt(rename_sql) {
+        Statement::AlterFileFormat {
+            if_exists,
+            name,
+            operation: AlterFileFormatOperation::RenameTo { new_name },
+        } => {
+            assert!(if_exists);
+            assert_eq!("analytics.raw.csv_format", name.to_string());
+            assert_eq!("archived_format", new_name.to_string());
+        }
+        statement => panic!("unexpected statement: {statement:?}"),
+    }
+
+    let set_sql = concat!(
+        "ALTER FILE FORMAT analytics.raw.csv_format SET ",
+        "COMPRESSION=GZIP FIELD_DELIMITER='|' SKIP_HEADER=1 COMMENT='updated'"
+    );
+    match snowflake().verified_stmt(set_sql) {
+        Statement::AlterFileFormat {
+            if_exists,
+            name,
+            operation: AlterFileFormatOperation::Set { options, comment },
+        } => {
+            assert!(!if_exists);
+            assert_eq!("analytics.raw.csv_format", name.to_string());
+            assert_eq!(3, options.options.len());
+            assert_eq!(Some("updated"), comment.as_deref());
+        }
+        statement => panic!("unexpected statement: {statement:?}"),
+    }
+
+    match snowflake().verified_stmt("SHOW FILE FORMATS LIKE 'csv%' IN SCHEMA analytics.raw") {
+        Statement::ShowFileFormats { show_options } => {
+            assert!(matches!(
+                show_options.filter_position,
+                Some(ShowStatementFilterPosition::Infix(
+                    ShowStatementFilter::Like(ref pattern)
+                )) if pattern == "csv%"
+            ));
+            assert!(matches!(
+                show_options.show_in,
+                Some(ShowStatementIn {
+                    parent_type: Some(ShowStatementInParentType::Schema),
+                    parent_name: Some(ref name),
+                    ..
+                }) if name.to_string() == "analytics.raw"
+            ));
+        }
+        statement => panic!("unexpected statement: {statement:?}"),
+    }
+
+    for sql in [
+        "DESCRIBE FILE FORMAT analytics.raw.csv_format",
+        "DESC FILE FORMAT analytics.raw.csv_format",
+    ] {
+        match snowflake().verified_stmt(sql) {
+            Statement::DescribeFileFormat {
+                describe_alias,
+                name,
+            } => {
+                assert!(matches!(
+                    describe_alias,
+                    DescribeAlias::Describe | DescribeAlias::Desc
+                ));
+                assert_eq!("analytics.raw.csv_format", name.to_string());
+            }
+            statement => panic!("unexpected statement: {statement:?}"),
+        }
+    }
+
+    match snowflake().verified_stmt("DROP FILE FORMAT IF EXISTS analytics.raw.csv_format") {
+        Statement::Drop {
+            object_type,
+            if_exists,
+            names,
+            ..
+        } => {
+            assert_eq!(ObjectType::FileFormat, object_type);
+            assert!(if_exists);
+            assert_eq!("analytics.raw.csv_format", names[0].to_string());
+        }
+        statement => panic!("unexpected statement: {statement:?}"),
+    }
+
+    for invalid in [
+        "ALTER FILE FORMAT analytics.raw.csv_format SET",
+        "ALTER FILE FORMAT analytics.raw.csv_format REFRESH",
+        "SHOW TERSE FILE FORMATS",
+    ] {
+        assert!(
+            snowflake().parse_sql_statements(invalid).is_err(),
+            "{invalid} should fail"
+        );
     }
 }

@@ -26,7 +26,9 @@ use alloc::{
 };
 use helpers::{
     attached_token::AttachedToken,
-    stmt_data_loading::{AlterStageOperation, FileStagingCommand, StageLoadSelectItemKind},
+    stmt_data_loading::{
+        AlterFileFormatOperation, AlterStageOperation, FileStagingCommand, StageLoadSelectItemKind,
+    },
 };
 
 use core::cmp::Ordering;
@@ -4244,6 +4246,15 @@ pub enum Statement {
         show_options: ShowStatementOptions,
     },
     /// ```sql
+    /// SHOW FILE FORMATS [ LIKE '<pattern>' ] [ IN { ACCOUNT | DATABASE | SCHEMA } ]
+    /// ```
+    /// Snowflake-specific statement.
+    /// <https://docs.snowflake.com/en/sql-reference/sql/show-file-formats>
+    ShowFileFormats {
+        /// Additional options for filtering and scoping the file format listing.
+        show_options: ShowStatementOptions,
+    },
+    /// ```sql
     /// SHOW VIEWS
     /// ```
     ShowViews {
@@ -4547,6 +4558,18 @@ pub enum Statement {
         operation: AlterStageOperation,
     },
     /// ```sql
+    /// ALTER FILE FORMAT
+    /// ```
+    /// See <https://docs.snowflake.com/en/sql-reference/sql/alter-file-format>
+    AlterFileFormat {
+        /// `IF EXISTS` flag.
+        if_exists: bool,
+        /// File format name.
+        name: ObjectName,
+        /// File format alteration to perform.
+        operation: AlterFileFormatOperation,
+    },
+    /// ```sql
     /// CREATE FILE FORMAT
     /// ```
     /// See <https://docs.snowflake.com/en/sql-reference/sql/create-file-format>
@@ -4683,6 +4706,18 @@ pub enum Statement {
         /// Stage name.
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         stage_name: ObjectName,
+    },
+    /// ```sql
+    /// DESC[RIBE] FILE FORMAT <name>
+    /// ```
+    /// Snowflake-specific statement.
+    /// <https://docs.snowflake.com/en/sql-reference/sql/desc-file-format>
+    DescribeFileFormat {
+        /// `DESC | DESCRIBE` spelling used by the input statement.
+        describe_alias: DescribeAlias,
+        /// File format name.
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        name: ObjectName,
     },
     /// ```sql
     /// [EXPLAIN | DESC | DESCRIBE]  <statement>
@@ -5185,6 +5220,10 @@ impl fmt::Display for Statement {
                 describe_alias,
                 stage_name,
             } => write!(f, "{describe_alias} STAGE {stage_name}"),
+            Statement::DescribeFileFormat {
+                describe_alias,
+                name,
+            } => write!(f, "{describe_alias} FILE FORMAT {name}"),
             Statement::Explain {
                 describe_alias,
                 verbose,
@@ -5999,6 +6038,9 @@ impl fmt::Display for Statement {
             Statement::ShowStages { show_options } => {
                 write!(f, "SHOW STAGES{show_options}")
             }
+            Statement::ShowFileFormats { show_options } => {
+                write!(f, "SHOW FILE FORMATS{show_options}")
+            }
             Statement::ShowViews {
                 terse,
                 materialized,
@@ -6348,6 +6390,32 @@ impl fmt::Display for Statement {
                         }
                         if !copy_options.options.is_empty() {
                             write!(f, " COPY_OPTIONS=({copy_options})")?;
+                        }
+                        if let Some(comment) = comment {
+                            write!(f, " COMMENT='{comment}'")?;
+                        }
+                        Ok(())
+                    }
+                }
+            }
+            Statement::AlterFileFormat {
+                if_exists,
+                name,
+                operation,
+            } => {
+                write!(
+                    f,
+                    "ALTER FILE FORMAT {if_exists}{name}",
+                    if_exists = if *if_exists { "IF EXISTS " } else { "" },
+                )?;
+                match operation {
+                    AlterFileFormatOperation::RenameTo { new_name } => {
+                        write!(f, " RENAME TO {new_name}")
+                    }
+                    AlterFileFormatOperation::Set { options, comment } => {
+                        write!(f, " SET")?;
+                        if !options.options.is_empty() {
+                            write!(f, " {options}")?;
                         }
                         if let Some(comment) = comment {
                             write!(f, " COMMENT='{comment}'")?;
@@ -8686,6 +8754,8 @@ pub enum ObjectType {
     Sequence,
     /// A stage.
     Stage,
+    /// A named file format.
+    FileFormat,
     /// A type definition.
     Type,
     /// A user.
@@ -8707,6 +8777,7 @@ impl fmt::Display for ObjectType {
             ObjectType::Role => "ROLE",
             ObjectType::Sequence => "SEQUENCE",
             ObjectType::Stage => "STAGE",
+            ObjectType::FileFormat => "FILE FORMAT",
             ObjectType::Type => "TYPE",
             ObjectType::User => "USER",
             ObjectType::Stream => "STREAM",
