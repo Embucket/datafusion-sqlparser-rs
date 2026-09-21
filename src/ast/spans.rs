@@ -284,6 +284,7 @@ impl Spanned for Values {
 /// - [Statement::ShowCreate]
 /// - [Statement::ShowColumns]
 /// - [Statement::ShowTables]
+/// - [Statement::ShowStages]
 /// - [Statement::ShowCollation]
 /// - [Statement::StartTransaction]
 /// - [Statement::Comment]
@@ -306,6 +307,7 @@ impl Spanned for Values {
 /// - [Statement::Prepare]
 /// - [Statement::Kill]
 /// - [Statement::ExplainTable]
+/// - [Statement::DescribeStage]
 /// - [Statement::Explain]
 /// - [Statement::Savepoint]
 /// - [Statement::ReleaseSavepoint]
@@ -443,6 +445,7 @@ impl Spanned for Statement {
             Statement::ShowCreate { .. } => Span::empty(),
             Statement::ShowColumns { .. } => Span::empty(),
             Statement::ShowTables { .. } => Span::empty(),
+            Statement::ShowStages { .. } => Span::empty(),
             Statement::ShowCollation { .. } => Span::empty(),
             Statement::ShowCharset { .. } => Span::empty(),
             Statement::Use(u) => u.span(),
@@ -470,6 +473,7 @@ impl Spanned for Statement {
             Statement::Prepare { .. } => Span::empty(),
             Statement::Kill { .. } => Span::empty(),
             Statement::ExplainTable { .. } => Span::empty(),
+            Statement::DescribeStage { .. } => Span::empty(),
             Statement::Explain { .. } => Span::empty(),
             Statement::Savepoint { .. } => Span::empty(),
             Statement::ReleaseSavepoint { .. } => Span::empty(),

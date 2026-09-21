@@ -4235,6 +4235,15 @@ pub enum Statement {
         show_options: ShowStatementOptions,
     },
     /// ```sql
+    /// SHOW STAGES [ LIKE '<pattern>' ] [ IN { ACCOUNT | DATABASE | SCHEMA } ]
+    /// ```
+    /// Snowflake-specific statement.
+    /// <https://docs.snowflake.com/en/sql-reference/sql/show-stages>
+    ShowStages {
+        /// Additional options for filtering and scoping the stage listing.
+        show_options: ShowStatementOptions,
+    },
+    /// ```sql
     /// SHOW VIEWS
     /// ```
     ShowViews {
@@ -4650,6 +4659,18 @@ pub enum Statement {
         /// Table name
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         table_name: ObjectName,
+    },
+    /// ```sql
+    /// DESC[RIBE] STAGE <stage_name>
+    /// ```
+    /// Snowflake-specific statement.
+    /// <https://docs.snowflake.com/en/sql-reference/sql/desc-stage>
+    DescribeStage {
+        /// `DESC | DESCRIBE` spelling used by the input statement.
+        describe_alias: DescribeAlias,
+        /// Stage name.
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        stage_name: ObjectName,
     },
     /// ```sql
     /// [EXPLAIN | DESC | DESCRIBE]  <statement>
@@ -5148,6 +5169,10 @@ impl fmt::Display for Statement {
 
                 write!(f, "{table_name}")
             }
+            Statement::DescribeStage {
+                describe_alias,
+                stage_name,
+            } => write!(f, "{describe_alias} STAGE {stage_name}"),
             Statement::Explain {
                 describe_alias,
                 verbose,
@@ -5958,6 +5983,9 @@ impl fmt::Display for Statement {
                     history = if *history { " HISTORY" } else { "" },
                 )?;
                 Ok(())
+            }
+            Statement::ShowStages { show_options } => {
+                write!(f, "SHOW STAGES{show_options}")
             }
             Statement::ShowViews {
                 terse,
