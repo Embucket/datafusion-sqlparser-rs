@@ -48,6 +48,43 @@ pub struct StageParamsObject {
     pub credentials: KeyValueOptions,
 }
 
+impl StageParamsObject {
+    /// Returns true when no stage parameter is present.
+    pub fn is_empty(&self) -> bool {
+        self.url.is_none()
+            && self.encryption.options.is_empty()
+            && self.endpoint.is_none()
+            && self.storage_integration.is_none()
+            && self.credentials.options.is_empty()
+    }
+}
+
+/// An operation supported by Snowflake's `ALTER STAGE` statement.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterStageOperation {
+    /// Rename a stage.
+    RenameTo {
+        /// New stage name.
+        #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
+        new_name: ObjectName,
+    },
+    /// Set one or more stage properties.
+    Set {
+        /// External stage parameters.
+        stage_params: StageParamsObject,
+        /// Directory table parameters.
+        directory_table_params: KeyValueOptions,
+        /// File format options.
+        file_format: KeyValueOptions,
+        /// Copy options.
+        copy_options: KeyValueOptions,
+        /// Optional comment.
+        comment: Option<String>,
+    },
+}
+
 /// This enum enables support for both standard SQL select item expressions
 /// and Snowflake-specific ones for data loading.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

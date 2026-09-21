@@ -24,7 +24,8 @@ use crate::ast::helpers::key_value_options::{
 use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
 use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
 use crate::ast::helpers::stmt_data_loading::{
-    FileStagingCommand, StageLoadSelectItem, StageLoadSelectItemKind, StageParamsObject,
+    AlterStageOperation, FileStagingCommand, StageLoadSelectItem, StageLoadSelectItemKind,
+    StageParamsObject,
 };
 use crate::ast::{
     AlterTable, AlterTableOperation, AlterTableType, CatalogSyncNamespaceMode, CloudProviderParams,
@@ -296,6 +297,10 @@ impl Dialect for SnowflakeDialect {
                 _ => return Some(parser.expected_ref("SET or UNSET", parser.peek_token_ref())),
             };
             return Some(parse_alter_session(parser, set));
+        }
+
+        if parser.parse_keywords(&[Keyword::ALTER, Keyword::STAGE]) {
+            return Some(parse_alter_stage(parser));
         }
 
         if parser.parse_keyword(Keyword::CREATE) {
@@ -1397,37 +1402,10 @@ pub fn parse_create_stage(
     //[ IF NOT EXISTS ]
     let if_not_exists = parser.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
     let name = parser.parse_object_name(false)?;
-    let mut directory_table_params = Vec::new();
-    let mut file_format = Vec::new();
-    let mut copy_options = Vec::new();
-    let mut comment = None;
 
     // [ internalStageParams | externalStageParams ]
     let stage_params = parse_stage_params(parser)?;
-
-    // [ directoryTableParams ]
-    if parser.parse_keyword(Keyword::DIRECTORY) {
-        parser.expect_token(&Token::Eq)?;
-        directory_table_params = parser.parse_key_value_options(true, &[])?.options;
-    }
-
-    // [ file_format]
-    if parser.parse_keyword(Keyword::FILE_FORMAT) {
-        parser.expect_token(&Token::Eq)?;
-        file_format = parser.parse_key_value_options(true, &[])?.options;
-    }
-
-    // [ copy_options ]
-    if parser.parse_keyword(Keyword::COPY_OPTIONS) {
-        parser.expect_token(&Token::Eq)?;
-        copy_options = parser.parse_key_value_options(true, &[])?.options;
-    }
-
-    // [ comment ]
-    if parser.parse_keyword(Keyword::COMMENT) {
-        parser.expect_token(&Token::Eq)?;
-        comment = Some(parser.parse_comment_value()?);
-    }
+    let (directory_table_params, file_format, copy_options, comment) = parse_stage_options(parser)?;
 
     Ok(Statement::CreateStage {
         or_replace,
@@ -1435,19 +1413,49 @@ pub fn parse_create_stage(
         if_not_exists,
         name,
         stage_params,
-        directory_table_params: KeyValueOptions {
-            options: directory_table_params,
-            delimiter: KeyValueOptionsDelimiter::Space,
-        },
-        file_format: KeyValueOptions {
-            options: file_format,
-            delimiter: KeyValueOptionsDelimiter::Space,
-        },
-        copy_options: KeyValueOptions {
-            options: copy_options,
-            delimiter: KeyValueOptionsDelimiter::Space,
-        },
+        directory_table_params,
+        file_format,
+        copy_options,
         comment,
+    })
+}
+
+fn parse_alter_stage(parser: &mut Parser) -> Result<Statement, ParserError> {
+    let if_exists = parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+    let name = parser.parse_object_name(false)?;
+
+    let operation = if parser.parse_keyword(Keyword::RENAME) {
+        parser.expect_keyword(Keyword::TO)?;
+        AlterStageOperation::RenameTo {
+            new_name: parser.parse_object_name(false)?,
+        }
+    } else if parser.parse_keyword(Keyword::SET) {
+        let stage_params = parse_stage_params(parser)?;
+        let (directory_table_params, file_format, copy_options, comment) =
+            parse_stage_options(parser)?;
+        if stage_params.is_empty()
+            && directory_table_params.options.is_empty()
+            && file_format.options.is_empty()
+            && copy_options.options.is_empty()
+            && comment.is_none()
+        {
+            return parser.expected_ref("a stage property", parser.peek_token_ref());
+        }
+        AlterStageOperation::Set {
+            stage_params,
+            directory_table_params,
+            file_format,
+            copy_options,
+            comment,
+        }
+    } else {
+        return parser.expected_ref("RENAME TO or SET", parser.peek_token_ref());
+    };
+
+    Ok(Statement::AlterStage {
+        if_exists,
+        name,
+        operation,
     })
 }
 
@@ -1856,6 +1864,56 @@ fn parse_stage_params(parser: &mut Parser) -> Result<StageParamsObject, ParserEr
         storage_integration,
         credentials,
     })
+}
+
+fn parse_stage_options(
+    parser: &mut Parser,
+) -> Result<
+    (
+        KeyValueOptions,
+        KeyValueOptions,
+        KeyValueOptions,
+        Option<String>,
+    ),
+    ParserError,
+> {
+    let mut directory_table_params = Vec::new();
+    let mut file_format = Vec::new();
+    let mut copy_options = Vec::new();
+    let mut comment = None;
+
+    if parser.parse_keyword(Keyword::DIRECTORY) {
+        parser.expect_token(&Token::Eq)?;
+        directory_table_params = parser.parse_key_value_options(true, &[])?.options;
+    }
+    if parser.parse_keyword(Keyword::FILE_FORMAT) {
+        parser.expect_token(&Token::Eq)?;
+        file_format = parser.parse_key_value_options(true, &[])?.options;
+    }
+    if parser.parse_keyword(Keyword::COPY_OPTIONS) {
+        parser.expect_token(&Token::Eq)?;
+        copy_options = parser.parse_key_value_options(true, &[])?.options;
+    }
+    if parser.parse_keyword(Keyword::COMMENT) {
+        parser.expect_token(&Token::Eq)?;
+        comment = Some(parser.parse_comment_value()?);
+    }
+
+    Ok((
+        KeyValueOptions {
+            options: directory_table_params,
+            delimiter: KeyValueOptionsDelimiter::Space,
+        },
+        KeyValueOptions {
+            options: file_format,
+            delimiter: KeyValueOptionsDelimiter::Space,
+        },
+        KeyValueOptions {
+            options: copy_options,
+            delimiter: KeyValueOptionsDelimiter::Space,
+        },
+        comment,
+    ))
 }
 
 /// Parses options separated by blank spaces, commas, or new lines like:
