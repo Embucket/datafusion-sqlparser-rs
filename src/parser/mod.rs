@@ -13902,6 +13902,9 @@ impl<'a> Parser<'a> {
     fn parse_structured_object_type_def(&mut self) -> Result<Vec<ColumnDef>, ParserError> {
         self.expect_token(&Token::LParen)?;
         let fields = self.parse_comma_separated(|parser| {
+            if matches!(parser.peek_token_ref().token, Token::SingleQuotedString(_)) {
+                return parser.expected("an object field identifier", parser.peek_token());
+            }
             let name = parser.parse_identifier()?;
             let data_type = parser.parse_data_type()?;
             let options = if parser.parse_keywords(&[Keyword::NOT, Keyword::NULL]) {

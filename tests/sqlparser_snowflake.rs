@@ -5561,6 +5561,8 @@ fn test_structured_object_type() {
 fn test_structured_object_type_errors() {
     for sql in [
         "CREATE TABLE t (o OBJECT(VARCHAR))",
+        "CREATE TABLE t (o OBJECT('json'))",
+        "CREATE TABLE t (o OBJECT('city' VARCHAR))",
         "CREATE TABLE t (o OBJECT(city VARCHAR NULL))",
         "CREATE TABLE t (o OBJECT(city VARCHAR)",
     ] {
