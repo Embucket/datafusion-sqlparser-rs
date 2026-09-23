@@ -443,6 +443,8 @@ pub enum DataType {
     ///
     /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/map
     Map(Box<DataType>, Box<DataType>),
+    /// Snowflake structured MAP with optional non-null values.
+    SnowflakeMap(Box<DataType>, Box<DataType>, bool),
     /// Tuple, see [ClickHouse].
     ///
     /// [ClickHouse]: https://clickhouse.com/docs/en/sql-reference/data-types/tuple
@@ -723,6 +725,13 @@ impl fmt::Display for DataType {
                 ArrayElemTypeDef::SquareBracket(t, Some(size)) => write!(f, "{t}[{size}]"),
                 ArrayElemTypeDef::AngleBracket(t) => write!(f, "ARRAY<{t}>"),
                 ArrayElemTypeDef::Parenthesis(t) => write!(f, "Array({t})"),
+                ArrayElemTypeDef::SnowflakeParenthesis(t, not_null) => {
+                    write!(f, "ARRAY({t}")?;
+                    if *not_null {
+                        write!(f, " NOT NULL")?;
+                    }
+                    write!(f, ")")
+                }
             },
             DataType::Custom(ty, modifiers) => {
                 if modifiers.is_empty() {
@@ -791,6 +800,13 @@ impl fmt::Display for DataType {
             }
             DataType::Map(key_data_type, value_data_type) => {
                 write!(f, "Map({key_data_type}, {value_data_type})")
+            }
+            DataType::SnowflakeMap(key_data_type, value_data_type, not_null) => {
+                write!(f, "MAP({key_data_type}, {value_data_type}")?;
+                if *not_null {
+                    write!(f, " NOT NULL")?;
+                }
+                write!(f, ")")
             }
             DataType::Tuple(fields) => {
                 write!(f, "Tuple({})", display_comma_separated(fields))
@@ -1153,6 +1169,8 @@ pub enum ArrayElemTypeDef {
     SquareBracket(Box<DataType>, Option<u64>),
     /// Parenthesis style, e.g. `Array(Int64)`.
     Parenthesis(Box<DataType>),
+    /// Snowflake parenthesis style, e.g. `ARRAY(NUMBER NOT NULL)`.
+    SnowflakeParenthesis(Box<DataType>, bool),
 }
 
 /// Represents different types of geometric shapes which are commonly used in

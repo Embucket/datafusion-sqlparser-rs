@@ -12675,7 +12675,20 @@ impl<'a> Parser<'a> {
                 Keyword::ENUM16 => Ok(DataType::Enum(self.parse_enum_values()?, Some(16))),
                 Keyword::SET => Ok(DataType::Set(self.parse_string_values()?)),
                 Keyword::ARRAY => {
-                    if dialect_of!(self is ClickHouseDialect | SnowflakeDialect)
+                    if self
+                        .dialect
+                        .supports_parenthesized_array_type_with_element_nullability()
+                        && self.peek_token_ref().token == Token::LParen
+                    {
+                        self.expect_token(&Token::LParen)?;
+                        let element_type = self.parse_data_type()?;
+                        let not_null = self.parse_keywords(&[Keyword::NOT, Keyword::NULL]);
+                        self.expect_token(&Token::RParen)?;
+                        Ok(DataType::Array(ArrayElemTypeDef::SnowflakeParenthesis(
+                            Box::new(element_type),
+                            not_null,
+                        )))
+                    } else if dialect_of!(self is ClickHouseDialect)
                         && self.peek_token_ref().token == Token::LParen
                     {
                         Ok(self.parse_sub_type(|internal_type| {
@@ -12733,6 +12746,23 @@ impl<'a> Parser<'a> {
                     Ok(DataType::Map(
                         Box::new(key_data_type),
                         Box::new(value_data_type),
+                    ))
+                }
+                Keyword::MAP
+                    if self
+                        .dialect
+                        .supports_parenthesized_map_type_with_value_nullability() =>
+                {
+                    self.expect_token(&Token::LParen)?;
+                    let key_data_type = self.parse_data_type()?;
+                    self.expect_token(&Token::Comma)?;
+                    let value_data_type = self.parse_data_type()?;
+                    let value_not_null = self.parse_keywords(&[Keyword::NOT, Keyword::NULL]);
+                    self.expect_token(&Token::RParen)?;
+                    Ok(DataType::SnowflakeMap(
+                        Box::new(key_data_type),
+                        Box::new(value_data_type),
+                        value_not_null,
                     ))
                 }
                 Keyword::MAP if dialect_is!(dialect is ClickHouseDialect | GenericDialect) => {

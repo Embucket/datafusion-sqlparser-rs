@@ -1329,25 +1329,22 @@ fn parse_array() {
     );
 
     let sql = "SELECT CAST(a AS ARRAY(VARCHAR)) FROM customer";
-    let select = snowflake()
-        .verified_only_select_with_canonical(sql, "SELECT CAST(a AS Array(VARCHAR)) FROM customer");
+    let select = snowflake().verified_only_select(sql);
     assert_eq!(
         &Expr::Cast {
             kind: CastKind::Cast,
             expr: Box::new(Expr::Identifier(Ident::new("a"))),
-            data_type: DataType::Array(ArrayElemTypeDef::Parenthesis(Box::new(DataType::Varchar(
-                None
-            ),))),
+            data_type: DataType::Array(ArrayElemTypeDef::SnowflakeParenthesis(
+                Box::new(DataType::Varchar(None)),
+                false,
+            )),
             array: false,
             format: None,
         },
         expr_from_projection(only(&select.projection))
     );
 
-    snowflake().one_statement_parses_to(
-        "CREATE TABLE t (a ARRAY(NUMBER))",
-        "CREATE TABLE t (a Array(NUMBER))",
-    );
+    snowflake().verified_stmt("CREATE TABLE t (a ARRAY(NUMBER))");
 }
 
 #[test]
@@ -5533,9 +5530,8 @@ fn test_external_volume() {
 
 #[test]
 fn test_structured_object_type() {
-    snowflake().one_statement_parses_to(
+    snowflake().verified_stmt(
         "SELECT payload::OBJECT(tags ARRAY(VARCHAR), address OBJECT(city VARCHAR NOT NULL)) FROM t",
-        "SELECT payload::OBJECT(tags Array(VARCHAR), address OBJECT(city VARCHAR NOT NULL)) FROM t",
     );
 
     let select = snowflake().verified_only_select(
@@ -5753,6 +5749,44 @@ fn test_sequence_lifecycle() {
         assert!(
             snowflake().parse_sql_statements(invalid).is_err(),
             "{invalid} should fail"
+        );
+    }
+}
+
+#[test]
+fn test_nested_structured_array_map_nullability() {
+    let sql = "SELECT payload::OBJECT(items ARRAY(NUMBER NOT NULL), meta MAP(VARCHAR, OBJECT(k NUMBER) NOT NULL)) FROM t";
+    let select = snowflake().verified_only_select(sql);
+    let Expr::Cast { data_type, .. } = expr_from_projection(only(&select.projection)) else {
+        unreachable!();
+    };
+    let DataType::Object(fields) = data_type else {
+        unreachable!();
+    };
+    assert!(matches!(
+        &fields[0].data_type,
+        DataType::Array(ArrayElemTypeDef::SnowflakeParenthesis(_, true))
+    ));
+    let DataType::SnowflakeMap(_, value, true) = &fields[1].data_type else {
+        unreachable!();
+    };
+    assert!(matches!(**value, DataType::Object(_)));
+
+    snowflake().verified_stmt("SELECT payload::ARRAY(NUMBER NOT NULL) FROM t");
+    snowflake().verified_stmt("SELECT payload::MAP(VARCHAR, NUMBER NOT NULL) FROM t");
+    snowflake().verified_stmt("SELECT payload::MAP(VARCHAR, NUMBER) FROM t");
+    snowflake().verified_stmt(
+        "SELECT payload::ARRAY(MAP(VARCHAR, ARRAY(NUMBER NOT NULL) NOT NULL) NOT NULL) FROM t",
+    );
+
+    for invalid in [
+        "SELECT payload::ARRAY(NUMBER NULL) FROM t",
+        "SELECT payload::MAP(VARCHAR NOT NULL, NUMBER) FROM t",
+        "SELECT payload::MAP(VARCHAR, NUMBER NOT NULL NOT NULL) FROM t",
+    ] {
+        assert!(
+            snowflake().parse_sql_statements(invalid).is_err(),
+            "{invalid}"
         );
     }
 }
