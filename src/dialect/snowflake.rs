@@ -248,6 +248,14 @@ impl Dialect for SnowflakeDialect {
         true
     }
 
+    fn supports_parenthesized_array_type_with_element_nullability(&self) -> bool {
+        true
+    }
+
+    fn supports_parenthesized_map_type_with_value_nullability(&self) -> bool {
+        true
+    }
+
     /// See [doc](https://docs.snowflake.com/en/sql-reference/data-types-structured#structured-object-types)
     fn supports_structured_object_type(&self) -> bool {
         true

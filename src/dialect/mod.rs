@@ -1081,6 +1081,16 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if typed `ARRAY(element_type [NOT NULL])` is supported.
+    fn supports_parenthesized_array_type_with_element_nullability(&self) -> bool {
+        false
+    }
+
+    /// Returns true if `MAP(key_type, value_type [NOT NULL])` is supported.
+    fn supports_parenthesized_map_type_with_value_nullability(&self) -> bool {
+        false
+    }
+
     /// Returns true if this dialect supports structured `OBJECT` types.
     ///
     /// Example:
