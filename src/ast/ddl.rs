@@ -3024,6 +3024,9 @@ pub struct CreateTable {
     /// Snowflake "BASE_LOCATION" clause for Iceberg tables
     /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
     pub base_location: Option<String>,
+    /// Snowflake "ICEBERG_VERSION" clause for Iceberg tables.
+    /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table-snowflake>
+    pub iceberg_version: Option<u64>,
     /// Snowflake "CATALOG" clause for Iceberg tables
     /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
     pub catalog: Option<String>,
@@ -3264,6 +3267,9 @@ impl fmt::Display for CreateTable {
         if self.iceberg {
             if let Some(base_location) = self.base_location.as_ref() {
                 write!(f, " BASE_LOCATION='{base_location}'")?;
+            }
+            if let Some(iceberg_version) = self.iceberg_version {
+                write!(f, " ICEBERG_VERSION={iceberg_version}")?;
             }
         }
 

@@ -609,6 +609,7 @@ impl Spanned for CreateTable {
             with_tags: _,                       // todo, Snowflake specific
             external_volume: _,                 // todo, Snowflake specific
             base_location: _,                   // todo, Snowflake specific
+            iceberg_version: _,                 // u64, no span
             catalog: _,                         // todo, Snowflake specific
             catalog_sync: _,                    // todo, Snowflake specific
             storage_serialization_policy: _,

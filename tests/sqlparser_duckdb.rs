@@ -779,6 +779,7 @@ fn test_duckdb_union_datatype() {
             with_storage_lifecycle_policy: Default::default(),
             with_tags: Default::default(),
             base_location: Default::default(),
+            iceberg_version: Default::default(),
             external_volume: Default::default(),
             catalog: Default::default(),
             catalog_sync: Default::default(),

@@ -495,6 +495,7 @@ define_keywords!(
     HUGEINT,
     IAM_ROLE,
     ICEBERG,
+    ICEBERG_VERSION,
     ID,
     IDENTIFIED,
     IDENTITY,

@@ -1070,11 +1070,29 @@ fn test_snowflake_create_iceberg_table() {
 
 #[test]
 fn test_snowflake_create_iceberg_table_without_location() {
-    let res = snowflake().parse_sql_statements("CREATE ICEBERG TABLE my_table (a INT)");
-    assert_eq!(
-        ParserError::ParserError("BASE_LOCATION is required for ICEBERG tables".to_string()),
-        res.unwrap_err()
-    );
+    match snowflake().verified_stmt("CREATE ICEBERG TABLE my_table (a INT)") {
+        Statement::CreateTable(table) => assert_eq!(table.base_location, None),
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn test_snowflake_create_iceberg_table_version() {
+    for version in [2, 3] {
+        let sql = format!(
+            "CREATE ICEBERG TABLE my_table (a INT) EXTERNAL_VOLUME='SNOWFLAKE_MANAGED' CATALOG='SNOWFLAKE' ICEBERG_VERSION={version}"
+        );
+        match snowflake().verified_stmt(&sql) {
+            Statement::CreateTable(table) => {
+                assert_eq!(table.iceberg_version, Some(version));
+                assert_eq!(table.base_location, None);
+            }
+            _ => unreachable!(),
+        }
+    }
+    assert!(snowflake()
+        .parse_sql_statements("CREATE TABLE my_table (a INT) ICEBERG_VERSION=3")
+        .is_err());
 }
 
 #[test]
