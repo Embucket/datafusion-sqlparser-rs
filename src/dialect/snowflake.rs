@@ -1870,7 +1870,7 @@ fn parse_stage_load_column_number(placeholder: &str) -> Result<(i32, Option<Stri
     let number = digits.parse::<i32>().map_err(|error| {
         ParserError::ParserError(format!("Could not parse '{placeholder}' as i32: {error}"))
     })?;
-    let raw = (placeholder != format!("${number}")).then(|| placeholder.to_owned());
+    let raw = (placeholder != format!("${number}")).then(|| String::from(placeholder));
     Ok((number, raw))
 }
 
