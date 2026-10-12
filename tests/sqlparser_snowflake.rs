@@ -2752,6 +2752,37 @@ fn test_copy_into_with_transformations() {
 }
 
 #[test]
+fn test_copy_into_staged_identifiers_preserve_quotes_and_spans() {
+    let sql = r#"COPY INTO t FROM (SELECT "src".$1:"field" AS "Mixed" FROM @stage AS "src")"#;
+    snowflake().verified_stmt(sql);
+    let Statement::CopyIntoSnowflake {
+        from_transformations: Some(items),
+        ..
+    } = sqlparser::parser::Parser::parse_sql(&SnowflakeDialect {}, sql)
+        .unwrap()
+        .remove(0)
+    else {
+        panic!("expected COPY INTO with transformations");
+    };
+    let StageLoadSelectItemKind::StageLoadSelectItem(item) = &items[0] else {
+        panic!("expected a staged field");
+    };
+    for (ident, source) in [
+        (item.alias.as_ref().unwrap(), "\"src\""),
+        (item.element.as_ref().unwrap(), "\"field\""),
+        (item.item_as.as_ref().unwrap(), "\"Mixed\""),
+    ] {
+        assert_eq!(ident.quote_style, Some('"'));
+        assert_eq!(ident.span.start.line, 1);
+        assert_eq!(
+            usize::try_from(ident.span.start.column).unwrap(),
+            sql.find(source).unwrap() + 1
+        );
+    }
+    assert_eq!(items[0].to_string(), r#""src".$1:"field" AS "Mixed""#);
+}
+
+#[test]
 fn test_copy_into_with_nested_transformation_path() {
     let sql = concat!(
         "COPY INTO cities FROM ",

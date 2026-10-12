@@ -1785,7 +1785,11 @@ fn parse_select_item_for_data_load(
             Ok(())
         }
         Token::Word(w) => {
-            alias = Some(Ident::new(w.value));
+            alias = Some(Ident {
+                value: w.value,
+                quote_style: w.quote_style,
+                span: next_token.span,
+            });
             Ok(())
         }
         _ => parser.expected("alias or file_col_num", next_token),
@@ -1810,10 +1814,17 @@ fn parse_select_item_for_data_load(
     match parser.next_token().token {
         Token::Colon => {
             // parse element
-            element = Some(Ident::new(match parser.next_token().token {
-                Token::Word(w) => Ok(w.value),
-                _ => parser.expected_ref("file_col_num", parser.peek_token_ref()),
-            }?));
+            element = Some(match parser.next_token() {
+                TokenWithSpan {
+                    token: Token::Word(w),
+                    span,
+                } => Ident {
+                    value: w.value,
+                    quote_style: w.quote_style,
+                    span,
+                },
+                token => return parser.expected("file_col_num", token),
+            });
         }
         _ => {
             // element not present move back
@@ -1835,10 +1846,17 @@ fn parse_select_item_for_data_load(
 
     // as
     if parser.parse_keyword(Keyword::AS) {
-        item_as = Some(match parser.next_token().token {
-            Token::Word(w) => Ok(Ident::new(w.value)),
-            _ => parser.expected_ref("column item alias", parser.peek_token_ref()),
-        }?);
+        item_as = Some(match parser.next_token() {
+            TokenWithSpan {
+                token: Token::Word(w),
+                span,
+            } => Ident {
+                value: w.value,
+                quote_style: w.quote_style,
+                span,
+            },
+            token => return parser.expected("column item alias", token),
+        });
     }
 
     Ok(StageLoadSelectItem {
