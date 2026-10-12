@@ -1773,15 +1773,14 @@ fn parse_select_item_for_data_load(
 ) -> Result<StageLoadSelectItem, ParserError> {
     let mut alias: Option<Ident> = None;
     let mut file_col_num: i32 = 0;
+    let mut file_col_num_raw: Option<String> = None;
     let mut element: Option<Ident> = None;
     let mut item_as: Option<Ident> = None;
 
     let next_token = parser.next_token();
     match next_token.token {
         Token::Placeholder(w) => {
-            file_col_num = w.to_string().split_off(1).parse::<i32>().map_err(|e| {
-                ParserError::ParserError(format!("Could not parse '{w}' as i32: {e}"))
-            })?;
+            (file_col_num, file_col_num_raw) = parse_stage_load_column_number(&w)?;
             Ok(())
         }
         Token::Word(w) => {
@@ -1801,9 +1800,7 @@ fn parse_select_item_for_data_load(
         let col_num_token = parser.next_token();
         match col_num_token.token {
             Token::Placeholder(w) => {
-                file_col_num = w.to_string().split_off(1).parse::<i32>().map_err(|e| {
-                    ParserError::ParserError(format!("Could not parse '{w}' as i32: {e}"))
-                })?;
+                (file_col_num, file_col_num_raw) = parse_stage_load_column_number(&w)?;
                 Ok(())
             }
             _ => parser.expected("file_col_num", col_num_token),
@@ -1862,9 +1859,19 @@ fn parse_select_item_for_data_load(
     Ok(StageLoadSelectItem {
         alias,
         file_col_num,
+        file_col_num_raw,
         element,
         item_as,
     })
+}
+
+fn parse_stage_load_column_number(placeholder: &str) -> Result<(i32, Option<String>), ParserError> {
+    let digits = placeholder.strip_prefix('$').unwrap_or(placeholder);
+    let number = digits.parse::<i32>().map_err(|error| {
+        ParserError::ParserError(format!("Could not parse '{placeholder}' as i32: {error}"))
+    })?;
+    let raw = (placeholder != format!("${number}")).then(|| placeholder.to_owned());
+    Ok((number, raw))
 }
 
 fn parse_stage_params(parser: &mut Parser) -> Result<StageParamsObject, ParserError> {

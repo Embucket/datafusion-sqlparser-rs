@@ -135,6 +135,12 @@ pub struct StageLoadSelectItem {
     pub alias: Option<Ident>,
     /// Column number within the staged file (1-based).
     pub file_col_num: i32,
+    /// Original spelling when the staged placeholder differs from its numeric form.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub file_col_num_raw: Option<String>,
     /// Optional element identifier following the column reference.
     pub element: Option<Ident>,
     /// Optional alias for the item (AS clause).
@@ -172,7 +178,15 @@ impl fmt::Display for StageLoadSelectItem {
         if let Some(alias) = &self.alias {
             write!(f, "{alias}.")?;
         }
-        write!(f, "${}", self.file_col_num)?;
+        if let Some(raw) = self.file_col_num_raw.as_deref().filter(|raw| {
+            raw.strip_prefix('$')
+                .and_then(|digits| digits.parse::<i32>().ok())
+                == Some(self.file_col_num)
+        }) {
+            write!(f, "{raw}")?;
+        } else {
+            write!(f, "${}", self.file_col_num)?;
+        }
         if let Some(element) = &self.element {
             write!(f, ":{element}")?;
         }
