@@ -2703,6 +2703,7 @@ fn test_copy_into_with_transformations() {
                 StageLoadSelectItemKind::StageLoadSelectItem(StageLoadSelectItem {
                     alias: Some(Ident::new("t1")),
                     file_col_num: 1,
+                    file_col_num_raw: None,
                     element: Some(Ident::new("st")),
                     item_as: Some(Ident::new("st"))
                 })
@@ -2712,6 +2713,7 @@ fn test_copy_into_with_transformations() {
                 StageLoadSelectItemKind::StageLoadSelectItem(StageLoadSelectItem {
                     alias: None,
                     file_col_num: 1,
+                    file_col_num_raw: None,
                     element: Some(Ident::new("index")),
                     item_as: None
                 })
@@ -2721,6 +2723,7 @@ fn test_copy_into_with_transformations() {
                 StageLoadSelectItemKind::StageLoadSelectItem(StageLoadSelectItem {
                     alias: Some(Ident::new("t2")),
                     file_col_num: 1,
+                    file_col_num_raw: None,
                     element: None,
                     item_as: None
                 })
@@ -2780,6 +2783,35 @@ fn test_copy_into_staged_identifiers_preserve_quotes_and_spans() {
         );
     }
     assert_eq!(items[0].to_string(), r#""src".$1:"field" AS "Mixed""#);
+}
+
+#[test]
+fn test_copy_into_staged_placeholders_preserve_zero_padding() {
+    let sql = r#"COPY INTO t FROM (SELECT $1 AS "$00", $00, src.$01 AS "One" FROM @stage AS src)"#;
+    let statement = snowflake().verified_stmt(sql);
+    let Statement::CopyIntoSnowflake {
+        from_transformations: Some(items),
+        ..
+    } = statement
+    else {
+        panic!("expected COPY INTO with transformations");
+    };
+    for (item, number, raw) in [(&items[1], 0, "$00"), (&items[2], 1, "$01")] {
+        let StageLoadSelectItemKind::StageLoadSelectItem(item) = item else {
+            panic!("expected a staged field");
+        };
+        assert_eq!(item.file_col_num, number);
+        assert_eq!(item.file_col_num_raw.as_deref(), Some(raw));
+    }
+    assert_eq!(items[0].to_string(), "$1 AS \"$00\"");
+    assert_eq!(items[1].to_string(), "$00");
+    assert_eq!(items[2].to_string(), "src.$01 AS \"One\"");
+
+    let StageLoadSelectItemKind::StageLoadSelectItem(mut changed) = items[2].clone() else {
+        panic!("expected a staged field");
+    };
+    changed.file_col_num = 2;
+    assert_eq!(changed.to_string(), "src.$2 AS \"One\"");
 }
 
 #[test]
