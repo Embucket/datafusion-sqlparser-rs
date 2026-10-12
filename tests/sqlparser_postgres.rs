@@ -6702,6 +6702,7 @@ fn parse_trigger_related_functions() {
             with_storage_lifecycle_policy: None,
             with_tags: None,
             base_location: None,
+            iceberg_version: None,
             external_volume: None,
             catalog: None,
             catalog_sync: None,

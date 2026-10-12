@@ -1046,6 +1046,10 @@ pub fn parse_create_table(
                     parser.expect_token(&Token::Eq)?;
                     builder.base_location = Some(parser.parse_literal_string()?);
                 }
+                Keyword::ICEBERG_VERSION if iceberg => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder.iceberg_version = Some(parser.parse_literal_uint()?);
+                }
                 Keyword::CATALOG_SYNC => {
                     parser.expect_token(&Token::Eq)?;
                     builder.catalog_sync = Some(parser.parse_literal_string()?);
@@ -1130,12 +1134,6 @@ pub fn parse_create_table(
     };
 
     builder = builder.table_options(table_options);
-
-    if iceberg && builder.base_location.is_none() {
-        return Err(ParserError::ParserError(
-            "BASE_LOCATION is required for ICEBERG tables".to_string(),
-        ));
-    }
 
     Ok(builder.build())
 }
