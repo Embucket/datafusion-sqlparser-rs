@@ -36,6 +36,26 @@ mod test_utils;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn snowflake_alter_table_add_column_if_not_exists() {
+    for sql in [
+        "ALTER TABLE t ADD IF NOT EXISTS value NUMBER",
+        "ALTER TABLE t ADD COLUMN IF NOT EXISTS value NUMBER",
+    ] {
+        let Statement::AlterTable(AlterTable { operations, .. }) = snowflake().verified_stmt(sql)
+        else {
+            panic!("expected ALTER TABLE");
+        };
+        assert!(matches!(
+            operations.as_slice(),
+            [AlterTableOperation::AddColumn {
+                if_not_exists: true,
+                ..
+            }]
+        ));
+    }
+}
+
+#[test]
 fn test_snowflake_create_table() {
     let sql = "CREATE TABLE _my_$table (am00unt number)";
     match snowflake_and_generic().verified_stmt(sql) {
