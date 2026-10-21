@@ -204,6 +204,10 @@ impl Dialect for SnowflakeDialect {
         true
     }
 
+    fn supports_explicit_distinct_for_non_union_set_ops(&self) -> bool {
+        false
+    }
+
     // Snowflake uses this syntax for "object constants" (the values of which
     // are not actually required to be constants).
     //

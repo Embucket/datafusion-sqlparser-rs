@@ -453,6 +453,11 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if explicit `DISTINCT` is allowed after `INTERSECT`, `EXCEPT`, or `MINUS`.
+    fn supports_explicit_distinct_for_non_union_set_ops(&self) -> bool {
+        true
+    }
+
     /// Returns true if the dialect supports `(NOT) IN ()` expressions
     fn supports_in_empty_list(&self) -> bool {
         false

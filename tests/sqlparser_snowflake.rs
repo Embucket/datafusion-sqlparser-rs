@@ -5891,3 +5891,26 @@ fn test_nested_structured_array_map_nullability() {
         );
     }
 }
+
+#[test]
+fn test_set_operator_explicit_distinct() {
+    for valid in [
+        "SELECT 1 INTERSECT SELECT 1",
+        "SELECT 1 EXCEPT SELECT 1",
+        "SELECT 1 MINUS SELECT 1",
+        "SELECT 1 UNION DISTINCT SELECT 1",
+    ] {
+        snowflake().verified_stmt(valid);
+    }
+
+    for invalid in [
+        "SELECT 1 INTERSECT DISTINCT SELECT 1",
+        "SELECT 1 EXCEPT DISTINCT SELECT 1",
+        "SELECT 1 MINUS DISTINCT SELECT 1",
+        "SELECT 1 INTERSECT DISTINCT BY NAME SELECT 1",
+    ] {
+        let error = snowflake().parse_sql_statements(invalid).unwrap_err();
+        assert!(error.to_string().contains("DISTINCT"), "{invalid}: {error}");
+        TestedDialects::new(vec![Box::new(GenericDialect {})]).verified_stmt(invalid);
+    }
+}

@@ -14779,6 +14779,16 @@ impl<'a> Parser<'a> {
                 break;
             }
             self.next_token(); // skip past the set operator
+            if matches!(
+                &op,
+                Some(SetOperator::Intersect | SetOperator::Except | SetOperator::Minus)
+            ) && !self
+                .dialect
+                .supports_explicit_distinct_for_non_union_set_ops()
+                && self.peek_keyword(Keyword::DISTINCT)
+            {
+                return self.expected_ref("query body", self.peek_token_ref());
+            }
             let set_quantifier = self.parse_set_quantifier(&op);
             expr = SetExpr::SetOperation {
                 left: Box::new(expr),

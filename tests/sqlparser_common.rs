@@ -7974,15 +7974,17 @@ fn parse_derived_tables() {
 #[test]
 fn parse_union_except_intersect_minus() {
     // TODO: add assertions
+    let distinct_dialects =
+        all_dialects_where(|d| d.supports_explicit_distinct_for_non_union_set_ops());
     verified_stmt("SELECT 1 UNION SELECT 2");
     verified_stmt("SELECT 1 UNION ALL SELECT 2");
     verified_stmt("SELECT 1 UNION DISTINCT SELECT 1");
     verified_stmt("SELECT 1 EXCEPT SELECT 2");
     verified_stmt("SELECT 1 EXCEPT ALL SELECT 2");
-    verified_stmt("SELECT 1 EXCEPT DISTINCT SELECT 1");
+    distinct_dialects.verified_stmt("SELECT 1 EXCEPT DISTINCT SELECT 1");
     verified_stmt("SELECT 1 INTERSECT SELECT 2");
     verified_stmt("SELECT 1 INTERSECT ALL SELECT 2");
-    verified_stmt("SELECT 1 INTERSECT DISTINCT SELECT 1");
+    distinct_dialects.verified_stmt("SELECT 1 INTERSECT DISTINCT SELECT 1");
     verified_stmt("SELECT 1 UNION SELECT 2 UNION SELECT 3");
     verified_stmt("SELECT 1 EXCEPT SELECT 2 UNION SELECT 3"); // Union[Except[1,2], 3]
     verified_stmt("SELECT 1 INTERSECT (SELECT 2 EXCEPT SELECT 3)");
@@ -7991,20 +7993,26 @@ fn parse_union_except_intersect_minus() {
     verified_stmt("SELECT 1 UNION SELECT 2 INTERSECT SELECT 3"); // Union[1, Intersect[2,3]]
     verified_stmt("SELECT foo FROM tab UNION SELECT bar FROM TAB");
     verified_stmt("(SELECT * FROM new EXCEPT SELECT * FROM old) UNION ALL (SELECT * FROM old EXCEPT SELECT * FROM new) ORDER BY 1");
-    verified_stmt("(SELECT * FROM new EXCEPT DISTINCT SELECT * FROM old) UNION DISTINCT (SELECT * FROM old EXCEPT DISTINCT SELECT * FROM new) ORDER BY 1");
+    distinct_dialects.verified_stmt("(SELECT * FROM new EXCEPT DISTINCT SELECT * FROM old) UNION DISTINCT (SELECT * FROM old EXCEPT DISTINCT SELECT * FROM new) ORDER BY 1");
     verified_stmt("SELECT 1 AS x, 2 AS y EXCEPT BY NAME SELECT 9 AS y, 8 AS x");
     verified_stmt("SELECT 1 AS x, 2 AS y EXCEPT ALL BY NAME SELECT 9 AS y, 8 AS x");
-    verified_stmt("SELECT 1 AS x, 2 AS y EXCEPT DISTINCT BY NAME SELECT 9 AS y, 8 AS x");
+    distinct_dialects
+        .verified_stmt("SELECT 1 AS x, 2 AS y EXCEPT DISTINCT BY NAME SELECT 9 AS y, 8 AS x");
     verified_stmt("SELECT 1 AS x, 2 AS y INTERSECT BY NAME SELECT 9 AS y, 8 AS x");
     verified_stmt("SELECT 1 AS x, 2 AS y INTERSECT ALL BY NAME SELECT 9 AS y, 8 AS x");
-    verified_stmt("SELECT 1 AS x, 2 AS y INTERSECT DISTINCT BY NAME SELECT 9 AS y, 8 AS x");
+    distinct_dialects
+        .verified_stmt("SELECT 1 AS x, 2 AS y INTERSECT DISTINCT BY NAME SELECT 9 AS y, 8 AS x");
 
     // Dialects that support `MINUS` as column identifier
     // do not support `MINUS` as a set operator.
     let dialects = all_dialects_where(|d| !d.is_column_alias(&Keyword::MINUS, &mut Parser::new(d)));
     dialects.verified_stmt("SELECT 1 MINUS SELECT 2");
     dialects.verified_stmt("SELECT 1 MINUS ALL SELECT 2");
-    dialects.verified_stmt("SELECT 1 MINUS DISTINCT SELECT 1");
+    let minus_distinct_dialects = all_dialects_where(|d| {
+        d.supports_explicit_distinct_for_non_union_set_ops()
+            && !d.is_column_alias(&Keyword::MINUS, &mut Parser::new(d))
+    });
+    minus_distinct_dialects.verified_stmt("SELECT 1 MINUS DISTINCT SELECT 1");
 }
 
 #[test]
