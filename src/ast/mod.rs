@@ -4745,6 +4745,12 @@ pub enum Statement {
         name: ObjectName,
     },
     /// ```sql
+    /// DESC | DESCRIBE { DATABASE | SCHEMA } <name>
+    /// ```
+    /// See [DESCRIBE DATABASE](https://docs.snowflake.com/en/sql-reference/sql/desc-database)
+    /// and [DESCRIBE SCHEMA](https://docs.snowflake.com/en/sql-reference/sql/desc-schema)
+    DescribeObject(DescribeObject),
+    /// ```sql
     /// [EXPLAIN | DESC | DESCRIBE]  <statement>
     /// ```
     Explain {
@@ -5252,6 +5258,7 @@ impl fmt::Display for Statement {
 
                 write!(f, "{id}")
             }
+            Statement::DescribeObject(s) => write!(f, "{s}"),
             Statement::ExplainTable {
                 describe_alias,
                 hive_format,
@@ -9086,6 +9093,33 @@ impl fmt::Display for DescribeAlias {
     }
 }
 
+/// ```sql
+/// DESC | DESCRIBE { DATABASE | SCHEMA } <name>
+/// ```
+/// See [DESCRIBE DATABASE](https://docs.snowflake.com/en/sql-reference/sql/desc-database)
+/// and [DESCRIBE SCHEMA](https://docs.snowflake.com/en/sql-reference/sql/desc-schema)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct DescribeObject {
+    /// The keyword used, `DESC` or `DESCRIBE`.
+    pub describe_alias: DescribeAlias,
+    /// The kind of object described: `DATABASE` or `SCHEMA`.
+    pub object_type: ObjectType,
+    /// Name of the object.
+    pub name: ObjectName,
+}
+
+impl fmt::Display for DescribeObject {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{} {} {}",
+            self.describe_alias, self.object_type, self.name
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -12174,7 +12208,7 @@ impl fmt::Display for AlterUser {
         let has_props = !self.set_props.options.is_empty();
         if has_props {
             write!(f, " SET")?;
-            write!(f, " {}", &self.set_props)?;
+            write!(f, " {}", self.set_props)?;
         }
         if !self.unset_props.is_empty() {
             write!(f, " UNSET {}", display_comma_separated(&self.unset_props))?;
@@ -12871,6 +12905,12 @@ impl From<ExportData> for Statement {
 impl From<CreateUser> for Statement {
     fn from(c: CreateUser) -> Self {
         Self::CreateUser(c)
+    }
+}
+
+impl From<DescribeObject> for Statement {
+    fn from(d: DescribeObject) -> Self {
+        Self::DescribeObject(d)
     }
 }
 

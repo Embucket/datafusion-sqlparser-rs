@@ -312,4 +312,7 @@ impl Dialect for GenericDialect {
     fn supports_xml_expressions(&self) -> bool {
         true
     }
+    fn supports_describe_object(&self) -> bool {
+        true
+    }
 }

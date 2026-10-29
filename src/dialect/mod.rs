@@ -1019,6 +1019,15 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if this dialect supports `DESC | DESCRIBE <object_type> <name>`
+    /// for namespace object types: `DESCRIBE DATABASE my_db` or `DESCRIBE SCHEMA my_schema`.
+    /// Existing `DESCRIBE VIEW` support keeps its `ExplainTable` representation.
+    ///
+    /// See <https://docs.snowflake.com/en/sql-reference/sql/desc>
+    fn supports_describe_object(&self) -> bool {
+        false
+    }
+
     /// Returns true if this dialect allows the `EXTRACT` function to words other than [`Keyword`].
     fn allow_extract_custom(&self) -> bool {
         false

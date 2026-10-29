@@ -35,6 +35,12 @@ execution consumer to validate. Never evaluate properties, normalize account ide
 consume statement delimiters inside option loops, or infer runtime support from an AST.
 Run the required fork checks below before committing changes to this syntax.
 
+Namespace DESCRIBE backports retain this fork's existing VIEW representation
+(`ExplainTable::has_view_keyword`), stage/file-format/sequence syntax and statement
+boundaries. `DescribeObject` admits DATABASE/SCHEMA only; account namespaces must
+not acquire table-relation visitor annotations. Parser tests do not establish
+DataFusion or Rustice runtime support for the additive AST variant.
+
 Snowflake CREATE TABLE's dedicated COMMENT option admits explicit `= NULL` as
 `SqlOption::Comment(CommentDef::NullWithEq)` in plain table options. Keep existing
 string variants and the shared `parse_comment_value` strict: column, stage, file
