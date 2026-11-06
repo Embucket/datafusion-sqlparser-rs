@@ -35,6 +35,6 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: "3.12"
       - name: Audit licenses
-        run: ./dev/release/run-rat.sh .
+        run: bash -e ./dev/release/run-rat.sh .
