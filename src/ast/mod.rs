@@ -27,7 +27,8 @@ use alloc::{
 use helpers::{
     attached_token::AttachedToken,
     stmt_data_loading::{
-        AlterFileFormatOperation, AlterStageOperation, FileStagingCommand, StageLoadSelectItemKind,
+        AlterFileFormatOperation, AlterStageOperation, FileStagingCommand, Get, Put,
+        StageLoadSelectItemKind,
     },
 };
 
@@ -5022,6 +5023,10 @@ pub enum Statement {
     /// Snowflake `REMOVE`
     /// See: <https://docs.snowflake.com/en/sql-reference/sql/remove>
     Remove(FileStagingCommand),
+    /// Snowflake `PUT`: prepare an upload from a local URI to a stage.
+    Put(Put),
+    /// Snowflake `GET`: prepare a download from a stage to a local URI.
+    Get(Get),
     /// RaiseError (MSSQL)
     /// RAISERROR ( { msg_id | msg_str | @local_variable }
     /// { , severity , state }
@@ -6723,6 +6728,8 @@ impl fmt::Display for Statement {
             Statement::Return(r) => write!(f, "{r}"),
             Statement::List(command) => write!(f, "LIST {command}"),
             Statement::Remove(command) => write!(f, "REMOVE {command}"),
+            Statement::Put(command) => write!(f, "{command}"),
+            Statement::Get(command) => write!(f, "{command}"),
             Statement::ExportData(e) => write!(f, "{e}"),
             Statement::CreateUser(s) => write!(f, "{s}"),
             Statement::AlterSchema(s) => write!(f, "{s}"),

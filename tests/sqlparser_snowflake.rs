@@ -5969,3 +5969,317 @@ fn snowflake_create_database_still_requires_statement_delimiters() {
         );
     }
 }
+
+#[test]
+fn snowflake_put_get_typed_locations_and_options() {
+    use sqlparser::ast::helpers::stmt_data_loading::{FileTransferLocation, FileTransferStage};
+
+    let sql = r#"PUT file:///tmp/a--b/*?[0-9]#part.csv @"db.with.dot"."schema/part"."stage""name"/inbox/a--b/*?x=1#part AUTO_COMPRESS=FALSE SOURCE_COMPRESSION=AUTO_DETECT OVERWRITE=TRUE PARALLEL=001"#;
+    let Statement::Put(command) = snowflake().one_statement_parses_to(
+        sql,
+        r#"PUT file:///tmp/a--b/*?[0-9]#part.csv @"db.with.dot"."schema/part"."stage""name"/inbox/a--b/*?x=1#part AUTO_COMPRESS=false SOURCE_COMPRESSION=AUTO_DETECT OVERWRITE=true PARALLEL=001"#,
+    ) else {
+        panic!("expected typed PUT");
+    };
+    assert!(matches!(
+        command.source,
+        FileTransferLocation::Local { ref uri, quoted: false }
+            if uri == "file:///tmp/a--b/*?[0-9]#part.csv"
+    ));
+    let FileTransferLocation::Stage(location) = command.target else {
+        panic!("expected typed stage target");
+    };
+    let FileTransferStage::Named(name) = location.kind else {
+        panic!("expected named stage");
+    };
+    assert_eq!(
+        name,
+        ObjectName::from(vec![
+            Ident::with_quote('"', "db.with.dot"),
+            Ident::with_quote('"', "schema/part"),
+            Ident::with_quote('"', "stage\"name"),
+        ])
+    );
+    assert_eq!(location.prefix.as_deref(), Some("inbox/a--b/*?x=1#part"));
+    assert!(!location.quoted);
+    assert_eq!(command.options.len(), 4);
+    assert_eq!(command.options[0].name, Ident::new("AUTO_COMPRESS"));
+    assert!(matches!(
+        command.options[0].value,
+        Expr::Value(ValueWithSpan {
+            value: Value::Boolean(false),
+            ..
+        })
+    ));
+    assert_eq!(
+        command.options[1].value,
+        Expr::Identifier(Ident::new("AUTO_DETECT"))
+    );
+    assert!(matches!(
+        &command.options[3].value,
+        Expr::Value(ValueWithSpan {
+            value: Value::Number(_, false),
+            ..
+        })
+    ));
+    assert_eq!(command.options[3].to_string(), "PARALLEL=001");
+    let mut changed = command.options[3].clone();
+    changed.value = Expr::Value(Value::Number("2".parse().unwrap(), false).with_empty_span());
+    assert_eq!(changed.to_string(), "PARALLEL=2");
+}
+
+#[test]
+fn snowflake_put_get_quoted_paths_round_trip_without_path_normalization() {
+    for sql in [
+        r#"PUT 'file:///tmp/a b/it''s--file/*.csv?x#part' @stage/path AUTO_COMPRESS=false"#,
+        r#"GET '@"db.with.dot"."stage/slash"/a b/it''s--key/*?x#part' 'file:///tmp/download here' PATTERN='.*[.]csv' PARALLEL=4"#,
+        r#"PUT file://relative/../input.csv @stage/a/../b OVERWRITE=true"#,
+        r#"PUT file:///tmp/input.csv @stage/ PARALLEL=-1"#,
+        r#"GET @stage file:///tmp/download PARALLEL=100"#,
+        r#"PUT 'file:///C:\input\a.csv' @stage/a\b AUTO_COMPRESS=false"#,
+        r#"PUT file:///tmp/a"b.csv @stage/a"b?x#part AUTO_COMPRESS=false"#,
+    ] {
+        snowflake().verified_stmt(sql);
+    }
+}
+
+#[test]
+fn snowflake_put_get_preserves_option_order_duplicates_and_numeric_spelling() {
+    let Statement::Put(command) = snowflake().one_statement_parses_to(
+        "PUT file:///tmp/a.csv @stage AUTO_COMPRESS=FALSE PARALLEL=-001 AUTO_COMPRESS=TRUE UNSUPPORTED_OPTION=7",
+        "PUT file:///tmp/a.csv @stage AUTO_COMPRESS=false PARALLEL=-001 AUTO_COMPRESS=true UNSUPPORTED_OPTION=7",
+    ) else {
+        panic!("expected typed PUT");
+    };
+    assert_eq!(command.options.len(), 4);
+    assert_eq!(command.options[0].name, command.options[2].name);
+    assert_eq!(command.options[1].to_string(), "PARALLEL=-001");
+    assert_eq!(command.options[3].name, Ident::new("UNSUPPORTED_OPTION"));
+    // Semantic option admission/range errors belong to the owning execution layer.
+    for value in ["0", "100", "-1", "+001", "1.5", "NULL", "'invalid'"] {
+        assert!(snowflake()
+            .parse_sql_statements(&format!("GET @stage file:///tmp/download PARALLEL={value}"))
+            .is_ok());
+    }
+}
+
+#[test]
+fn snowflake_put_get_represents_user_and_table_stages_without_named_aliases() {
+    use sqlparser::ast::helpers::stmt_data_loading::{FileTransferLocation, FileTransferStage};
+    for (sql, user) in [
+        ("PUT file:///tmp/a.csv @~/prefix", true),
+        (
+            r#"GET @"db"."schema".%"table/name"/prefix file:///tmp/download"#,
+            false,
+        ),
+    ] {
+        let statement = snowflake().verified_stmt(sql);
+        let stage = match statement {
+            Statement::Put(command) => command.target,
+            Statement::Get(command) => command.source,
+            _ => panic!("expected transfer statement"),
+        };
+        let FileTransferLocation::Stage(location) = stage else {
+            panic!("expected stage location");
+        };
+        assert_eq!(location.prefix.as_deref(), Some("prefix"));
+        if user {
+            assert!(matches!(location.kind, FileTransferStage::User));
+        } else {
+            assert!(matches!(location.kind, FileTransferStage::Table(_)));
+        }
+    }
+}
+
+#[test]
+fn snowflake_put_get_statement_boundaries_and_ordinary_sql_comments() {
+    use sqlparser::parser::Parser;
+
+    let statements = Parser::parse_sql(
+        &SnowflakeDialect,
+        "SELECT 1; PUT file:///tmp/a--b/*.csv?x#part @stage/prefix; GET @stage/prefix file:///tmp/out; SELECT put, get FROM source",
+    )
+    .unwrap();
+    assert_eq!(statements.len(), 4);
+    assert!(matches!(statements[1], Statement::Put(_)));
+    assert!(matches!(statements[2], Statement::Get(_)));
+    assert!(matches!(statements[3], Statement::Query(_)));
+    snowflake().one_statement_parses_to(
+        "SELECT put, get FROM source // ordinary PUT file:///tmp/a.csv @stage\n",
+        "SELECT put, get FROM source",
+    );
+    snowflake().one_statement_parses_to(
+        "SELECT put(1), get(2) /* ordinary file:///tmp/ -- text */",
+        "SELECT put(1), get(2)",
+    );
+    snowflake().one_statement_parses_to(
+        "PUT /* before source */ file:///tmp/a.csv -- before target\n @stage/path # after target\n PARALLEL=4",
+        "PUT file:///tmp/a.csv @stage/path PARALLEL=4",
+    );
+}
+
+#[test]
+fn snowflake_put_get_malformed_operands_and_options() {
+    for sql in [
+        "PUT",
+        "PUT file:///tmp/a.csv",
+        "GET @stage",
+        "PUT file:///tmp/a.csv @",
+        "GET @% file:///tmp/out",
+        "GET @~.name file:///tmp/out",
+        "GET @%db.schema.table file:///tmp/out",
+        "GET @IDENTIFIER('stage') file:///tmp/out",
+        "PUT file:///tmp/a.csv @db.IDENTIFIER(:1)",
+        "PUT file:///tmp/a.csv @stage PARALLEL",
+        "GET @stage file:///tmp/out PARALLEL=",
+        "PUT file:///tmp/a.csv @stage AUTO_COMPRESS=TRUE, OVERWRITE=FALSE",
+        "PUT 'file:///tmp/unterminated @stage",
+        "GET @\"unterminated/file file:///tmp/out",
+        "PUT file:///tmp/a.csv @stage--hidden-suffix",
+    ] {
+        assert!(snowflake().parse_sql_statements(sql).is_err(), "{sql}");
+    }
+}
+
+#[test]
+fn snowflake_put_get_stage_binding_parser_preserves_components_and_prefix() {
+    use sqlparser::ast::helpers::stmt_data_loading::FileTransferStage;
+    use sqlparser::dialect::parse_file_transfer_stage_location;
+
+    let location = parse_file_transfer_stage_location(
+        r#"@"db.with/slash"."schema.dot"."stage""name"/prefix/../a--b/*?x#part"#,
+    )
+    .unwrap();
+    let FileTransferStage::Named(name) = location.kind else {
+        panic!("expected named stage");
+    };
+    assert_eq!(name.0.len(), 3);
+    assert_eq!(location.prefix.as_deref(), Some("prefix/../a--b/*?x#part"));
+    assert_eq!(
+        parse_file_transfer_stage_location("@get.schema.put")
+            .unwrap()
+            .kind,
+        FileTransferStage::Named(ObjectName::from(vec![
+            Ident::new("get"),
+            Ident::new("schema"),
+            Ident::new("put"),
+        ]))
+    );
+    assert_eq!(
+        parse_file_transfer_stage_location("@stage/*literal*/")
+            .unwrap()
+            .prefix
+            .as_deref(),
+        Some("*literal*/")
+    );
+    for invalid in [
+        "stage",
+        "@",
+        "@stage;SELECT 1",
+        "@stage--hidden",
+        "@IDENTIFIER('stage')",
+        "@db.IDENTIFIER(:1)",
+    ] {
+        assert!(
+            parse_file_transfer_stage_location(invalid).is_err(),
+            "{invalid}"
+        );
+    }
+}
+
+#[test]
+fn snowflake_put_get_opaque_tokens_are_operand_local_and_dialect_scoped() {
+    let sql = r#"PUT file:///tmp/a--b/*.csv?x#part @"stage/slash"/prefix; SELECT put, get"#;
+    let tokens = Tokenizer::new(&SnowflakeDialect, sql)
+        .tokenize_with_location()
+        .unwrap();
+    let operands = tokens
+        .iter()
+        .filter(|token| matches!(token.token, Token::FileTransferLocation { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(operands.len(), 2);
+    assert_eq!(operands[0].span.start, Location::new(1, 5));
+    assert_eq!(
+        operands[1].span.start,
+        Location::new(1, u64::try_from(sql.find('@').unwrap() + 1).unwrap())
+    );
+    assert!(tokens.iter().any(|token| token.token == Token::SemiColon));
+    let generic = Tokenizer::new(&GenericDialect, "PUT file:///tmp/a.csv @stage")
+        .tokenize()
+        .unwrap();
+    assert!(!generic
+        .iter()
+        .any(|token| matches!(token, Token::FileTransferLocation { .. })));
+    snowflake().one_statement_parses_to(
+        "// PUT file:///ignored/* @hidden\nPUT file:///tmp/a.csv @stage",
+        "PUT file:///tmp/a.csv @stage",
+    );
+}
+
+#[cfg(feature = "visitor")]
+#[test]
+fn snowflake_put_get_bindings_use_expression_visitors_not_table_relations() {
+    use core::ops::ControlFlow;
+    use sqlparser::ast::helpers::stmt_data_loading::FileTransferLocation;
+    use sqlparser::ast::{visit_expressions, visit_expressions_mut, visit_relations};
+
+    let mut statement = snowflake().verified_stmt("PUT ? :1 PARALLEL=:2");
+    let mut bindings = Vec::new();
+    let result = visit_expressions(&statement, |expr| {
+        if let Expr::Value(ValueWithSpan {
+            value: Value::Placeholder(value),
+            ..
+        }) = expr
+        {
+            bindings.push(value.clone());
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    assert_eq!(result, ControlFlow::Continue(()));
+    assert_eq!(bindings, vec!["?", ":1", ":2"]);
+    let result = visit_expressions_mut(&mut statement, |expr| {
+        if matches!(
+            expr,
+            Expr::Value(ValueWithSpan {
+                value: Value::Placeholder(_),
+                ..
+            })
+        ) {
+            *expr =
+                Expr::Value(Value::SingleQuotedString("@stage/prefix".into()).with_empty_span());
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    assert_eq!(result, ControlFlow::Continue(()));
+    assert!(matches!(statement, Statement::Put(ref command)
+        if matches!(command.target, FileTransferLocation::Binding(Expr::Value(_)))));
+
+    let statement = snowflake().verified_stmt("GET @db.schema.stage/prefix file:///tmp/out");
+    let result = visit_relations(&statement, |_| {
+        ControlFlow::Break("unexpected table relation")
+    });
+    assert_eq!(result, ControlFlow::Continue(()));
+}
+
+#[test]
+fn snowflake_bound_stage_prefix_is_data_and_display_remains_one_operand() {
+    use sqlparser::ast::helpers::stmt_data_loading::FileTransferLocation;
+    use sqlparser::dialect::parse_file_transfer_stage_location;
+
+    let bound =
+        parse_file_transfer_stage_location("@stage/prefix with space;a--b/*?x#part").unwrap();
+    assert!(bound.quoted);
+    assert_eq!(
+        bound.to_string(),
+        "'@stage/prefix with space;a--b/*?x#part'"
+    );
+    let Statement::Get(command) =
+        snowflake().verified_stmt(&format!("GET {bound} file:///tmp/download"))
+    else {
+        panic!("expected typed GET");
+    };
+    let FileTransferLocation::Stage(reparsed) = command.source else {
+        panic!("expected typed stage source");
+    };
+    assert_eq!(reparsed, bound);
+}

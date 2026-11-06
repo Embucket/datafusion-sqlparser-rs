@@ -219,6 +219,13 @@ pub enum Token {
     PGCubeRoot,
     /// `?` or `$` , a prepared statement arg placeholder
     Placeholder(String),
+    /// One opaque operand of a statement-start Snowflake `PUT` or `GET`.
+    FileTransferLocation {
+        /// URI or stage text with comment/glob/path bytes retained.
+        value: String,
+        /// Whether the complete operand was enclosed in single quotes.
+        quoted: bool,
+    },
     /// `->`, used as a operator to extract json field in PostgreSQL
     Arrow,
     /// `->>`, used as a operator to extract json field as text in PostgreSQL
@@ -383,6 +390,13 @@ impl fmt::Display for Token {
             Token::ShiftLeftVerticalBar => f.write_str("<<|"),
             Token::VerticalBarShiftRight => f.write_str("|>>"),
             Token::Placeholder(ref s) => write!(f, "{s}"),
+            Token::FileTransferLocation { value, quoted } => {
+                if *quoted {
+                    write!(f, "'{value}'")
+                } else {
+                    f.write_str(value)
+                }
+            }
             Token::Arrow => write!(f, "->"),
             Token::LongArrow => write!(f, "->>"),
             Token::HashArrow => write!(f, "#>"),
@@ -872,6 +886,8 @@ pub struct Tokenizer<'a> {
     /// If true (the default), the tokenizer will un-escape literal
     /// SQL strings See [`Tokenizer::with_unescape`] for more details.
     unescape: bool,
+    /// Internal identifier-only parsing must not activate statement-start transfer syntax.
+    file_transfer_locations: bool,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -896,6 +912,7 @@ impl<'a> Tokenizer<'a> {
             dialect,
             query,
             unescape: true,
+            file_transfer_locations: true,
         }
     }
 
@@ -931,6 +948,11 @@ impl<'a> Tokenizer<'a> {
     /// ```
     pub fn with_unescape(mut self, unescape: bool) -> Self {
         self.unescape = unescape;
+        self
+    }
+
+    pub(crate) fn with_file_transfer_locations(mut self, enabled: bool) -> Self {
+        self.file_transfer_locations = enabled;
         self
     }
 
@@ -970,8 +992,40 @@ impl<'a> Tokenizer<'a> {
         };
 
         let mut location = state.location();
-        while let Some(token) = self.next_token(&mut state, buf.last().map(|t| &t.token))? {
+        let file_transfer_locations =
+            self.file_transfer_locations && self.dialect.supports_file_transfer_commands();
+        let mut statement_start = true;
+        let mut transfer_operands = 0;
+        loop {
+            let token = if transfer_operands > 0 && Self::is_transfer_operand_start(&state) {
+                transfer_operands -= 1;
+                Some(self.tokenize_file_transfer_location(&mut state)?)
+            } else {
+                self.next_token(&mut state, buf.last().map(|t| &t.token))?
+            };
+            let Some(token) = token else {
+                break;
+            };
             let span = location.span_to(state.location());
+
+            if file_transfer_locations {
+                match &token {
+                    Token::Whitespace(_) => {}
+                    Token::SemiColon => {
+                        statement_start = true;
+                        transfer_operands = 0;
+                    }
+                    Token::Word(word) if statement_start => {
+                        statement_start = false;
+                        if word.quote_style.is_none()
+                            && matches!(word.keyword, Keyword::PUT | Keyword::GET)
+                        {
+                            transfer_operands = 2;
+                        }
+                    }
+                    _ => statement_start = false,
+                }
+            }
 
             // Check if this is a multiline comment hint that should be expanded
             match &token {
@@ -990,6 +1044,68 @@ impl<'a> Tokenizer<'a> {
             location = state.location();
         }
         Ok(())
+    }
+
+    /// Comments between operands retain SQL meaning. Once an operand starts,
+    /// its own `//`, `/*`, `--`, `?`, and `#` are opaque path bytes.
+    fn is_transfer_operand_start(state: &State) -> bool {
+        let mut chars = state.peekable.clone();
+        match chars.next() {
+            None | Some(';' | '#' | ' ' | '\t' | '\r' | '\n') => false,
+            Some('-') => chars.next() != Some('-'),
+            Some('/') => !matches!(chars.next(), Some('/' | '*')),
+            Some(_) => true,
+        }
+    }
+
+    fn tokenize_file_transfer_location(&self, state: &mut State) -> Result<Token, TokenizerError> {
+        let location = state.location();
+        let quoted = state.peek() == Some(&'\'');
+        let mut value = String::new();
+        if quoted {
+            state.next();
+            while let Some(ch) = state.next() {
+                if ch == '\'' {
+                    if state.peek() == Some(&'\'') {
+                        state.next();
+                        if !self.unescape {
+                            value.push('\'');
+                        }
+                    } else {
+                        return Ok(Token::FileTransferLocation { value, quoted });
+                    }
+                }
+                // Unlike an ordinary string literal, a transfer operand cannot
+                // discard a backslash before the execution layer validates paths.
+                value.push(ch);
+            }
+            return self.tokenizer_error(location, "Unterminated quoted file transfer location");
+        }
+
+        let mut identifier_quote = false;
+        let mut stage_name = state.peek() == Some(&'@');
+        while let Some(&ch) = state.peek() {
+            if !identifier_quote && (ch.is_whitespace() || ch == ';') {
+                break;
+            }
+            state.next();
+            value.push(ch);
+            if stage_name && ch == '/' && !identifier_quote {
+                stage_name = false;
+            }
+            if stage_name && ch == '"' {
+                if identifier_quote && state.peek() == Some(&'"') {
+                    state.next();
+                    value.push('"');
+                } else {
+                    identifier_quote = !identifier_quote;
+                }
+            }
+        }
+        if identifier_quote {
+            return self.tokenizer_error(location, "Unterminated quoted file transfer identifier");
+        }
+        Ok(Token::FileTransferLocation { value, quoted })
     }
 
     /// Re-tokenize optimizer hints from a multiline comment and add them to the buffer.
