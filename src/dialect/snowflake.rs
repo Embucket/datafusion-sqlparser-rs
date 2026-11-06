@@ -2099,6 +2099,12 @@ fn parse_stage_params(parser: &mut Parser) -> Result<StageParamsObject, ParserEr
         }?)
     }
 
+    // STORAGE_INTEGRATION may follow ENDPOINT, but a duplicate stays unconsumed.
+    if storage_integration.is_none() && parser.parse_keyword(Keyword::STORAGE_INTEGRATION) {
+        parser.expect_token(&Token::Eq)?;
+        storage_integration = Some(parser.next_token().token.to_string());
+    }
+
     // CREDENTIALS
     if parser.parse_keyword(Keyword::CREDENTIALS) {
         parser.expect_token(&Token::Eq)?;

@@ -6283,3 +6283,58 @@ fn snowflake_bound_stage_prefix_is_data_and_display_remains_one_operand() {
     };
     assert_eq!(reparsed, bound);
 }
+
+#[test]
+fn snowflake_create_stage_storage_integration_can_follow_endpoint() {
+    let canonical = concat!(
+        "CREATE STAGE reference_stage ",
+        "URL='s3://example-bucket/raw%40path/' ",
+        "STORAGE_INTEGRATION=LOCAL_REFERENCE ",
+        "ENDPOINT='https://example.invalid/raw%3Fpath/' ",
+        "FILE_FORMAT=(TYPE=CSV FIELD_DELIMITER='|') COMMENT='metadata only'"
+    );
+    let endpoint_first = concat!(
+        "CREATE STAGE reference_stage ",
+        "URL='s3://example-bucket/raw%40path/' ",
+        "ENDPOINT='https://example.invalid/raw%3Fpath/' ",
+        "STORAGE_INTEGRATION=LOCAL_REFERENCE ",
+        "FILE_FORMAT=(TYPE=CSV FIELD_DELIMITER='|') COMMENT='metadata only'"
+    );
+    let expected = snowflake().verified_stmt(canonical);
+    let observed = snowflake().one_statement_parses_to(endpoint_first, canonical);
+    let (
+        Statement::CreateStage {
+            stage_params: expected,
+            ..
+        },
+        Statement::CreateStage {
+            stage_params: observed,
+            ..
+        },
+    ) = (expected, observed)
+    else {
+        panic!("expected CREATE STAGE");
+    };
+    assert_eq!(observed, expected);
+    assert_eq!(
+        observed.storage_integration.as_deref(),
+        Some("LOCAL_REFERENCE")
+    );
+    assert_eq!(
+        observed.endpoint.as_deref(),
+        Some("https://example.invalid/raw%3Fpath/")
+    );
+}
+
+#[test]
+fn snowflake_create_stage_duplicate_integration_or_endpoint_stays_unsupported() {
+    for parameters in [
+        "STORAGE_INTEGRATION=first ENDPOINT='https://example.invalid/' STORAGE_INTEGRATION=second",
+        "ENDPOINT='https://example.invalid/' STORAGE_INTEGRATION=first STORAGE_INTEGRATION=second",
+        "STORAGE_INTEGRATION=first STORAGE_INTEGRATION=second ENDPOINT='https://example.invalid/'",
+        "ENDPOINT='https://first.invalid/' STORAGE_INTEGRATION=first ENDPOINT='https://second.invalid/'",
+    ] {
+        let sql = format!("CREATE STAGE reference_stage URL='s3://example-bucket/' {parameters}");
+        assert!(snowflake().parse_sql_statements(&sql).is_err(), "{sql}");
+    }
+}
