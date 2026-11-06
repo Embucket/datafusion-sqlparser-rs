@@ -26,6 +26,13 @@ snowflake().one_statement_parses_to(
 ```
 
 ## Analyzing Parsing Issues
+
+For Snowflake `PUT`/`GET`, keep opaque location lexing confined to the two operands
+at actual statement start. Preserve ordinary comments and identifiers/functions
+named `PUT`/`GET`. Keep stage `ObjectName` quoting separate from the exact payload
+prefix, avoid table-relation visitor annotations for named stages, and retain
+bindings as normal expression placeholders. The parser must not resolve paths,
+perform storage IO, evaluate options, or enforce an engine's transfer policy.
 You can try to simplify the SQL statement to identify the root cause of the parsing issue. This may involve removing certain clauses or components of the SQL statement to see if it can be parsed successfully. Additionally, you can compare the problematic SQL statement with similar statements that are parsed correctly to identify any differences that may be causing the issue.
 
 ## Pre Commit Checks

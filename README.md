@@ -78,7 +78,42 @@ This crate avoids semantic analysis because it varies drastically
 between dialects and implementations. If you want to do semantic
 analysis, feel free to use this project as a base.
 
-## Preserves Syntax Round Trip 
+## Snowflake transfer operands
+
+`SnowflakeDialect` represents `PUT` and `GET` with dedicated statement nodes and
+typed local URI, stage, and binding operands. A named stage retains its real
+`ObjectName` identifiers and a separate exact payload prefix. User and table
+stages remain distinct AST forms. Stage operands are not annotated as table
+relations for generic relation discovery.
+
+Only the first two operands after a statement-start transfer keyword use opaque
+location tokenization. This keeps `file://`, `/*` globs, `--` filenames, `?`, and
+`#` intact without changing ordinary SQL comments or identifiers/functions named
+`PUT` and `GET`. Single-quoted transfer operands retain literal backslashes and
+use doubled quotes for a literal quote; ordinary SQL string escape rules outside
+these operands are unchanged. Whole-stage single quotes are a local grammar form,
+not independent Snowflake reference evidence. Double-quoted local URIs and
+`IDENTIFIER(...)` transfer operands are outside this grammar.
+
+Options retain their original order, duplicates, and typed `Expr` values, including
+signed numeric spelling. Optional numeric spelling metadata retains forms such as
+`001` even when the `bigdecimal` feature normalizes the typed number; rendering
+ignores stale spelling after a visitor changes that numeric value. Location
+bindings use normal placeholder expressions so
+expression visitors can apply the owning engine's existing binding accounting.
+`dialect::snowflake::parse_file_transfer_stage_location` converts an exact bound
+stage value into a typed target without manufacturing a SQL statement.
+
+The parser performs no storage IO, option evaluation, range checking, async/batch
+admission, or transfer execution. The execution layer must validate primitive
+option shapes and supported stage kinds before planning/evaluating expressions
+or submitting work. Accepting syntax does not claim a transfer transport or a
+complete Snowflake workflow. In particular, path traversal/backslash admission,
+`PARALLEL` range errors, duplicate/unknown options, and unsupported stage kinds
+remain semantic responsibilities. These additions require owning qualification;
+source tests alone do not establish runtime or reference parity.
+
+## Preserves Syntax Round Trip
 
 This crate allows users to recover the original SQL text (with comments removed,
 normalized whitespace and keyword capitalization), which is useful for tools

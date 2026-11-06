@@ -24,7 +24,9 @@ use crate::ast::helpers::key_value_options::{
 use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
 use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
 use crate::ast::helpers::stmt_data_loading::{
-    AlterFileFormatOperation, AlterStageOperation, FileStagingCommand, StageLoadSelectItem,
+    file_transfer_location_needs_quotes, file_transfer_number_matches, AlterFileFormatOperation,
+    AlterStageOperation, FileStagingCommand, FileTransferLocation, FileTransferOption,
+    FileTransferStage, FileTransferStageLocation, Get, Put, StageLoadSelectItem,
     StageLoadSelectItemKind, StageParamsObject,
 };
 use crate::ast::{
@@ -42,7 +44,7 @@ use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
 use crate::parser::{IsOptional, Parser, ParserError};
 use crate::tokenizer::TokenWithSpan;
-use crate::tokenizer::{Span, Token};
+use crate::tokenizer::{Span, Token, Tokenizer};
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
 #[cfg(not(feature = "std"))]
@@ -272,6 +274,10 @@ impl Dialect for SnowflakeDialect {
     }
 
     fn parse_statement(&self, parser: &mut Parser) -> Option<Result<Statement, ParserError>> {
+        if let Some(command) = parser.parse_one_of_keywords(&[Keyword::PUT, Keyword::GET]) {
+            return Some(parse_file_transfer_command(command, parser));
+        }
+
         if parser.parse_keyword(Keyword::BEGIN) {
             // Snowflake supports both `BEGIN TRANSACTION` and `BEGIN ... END` blocks.
             // If the next keyword indicates a transaction statement, let the
@@ -505,6 +511,10 @@ impl Dialect for SnowflakeDialect {
     }
 
     fn supports_file_format_commands(&self) -> bool {
+        true
+    }
+
+    fn supports_file_transfer_commands(&self) -> bool {
         true
     }
 
@@ -774,6 +784,182 @@ fn parse_file_staging_command(kw: Keyword, parser: &mut Parser) -> Result<Statem
             "unexpected stage command, expecting LIST, LS, REMOVE or RM".to_string(),
         )),
     }
+}
+
+fn parse_file_transfer_command(
+    command: Keyword,
+    parser: &mut Parser,
+) -> Result<Statement, ParserError> {
+    let source = parse_file_transfer_location(parser, command == Keyword::GET)?;
+    let target = parse_file_transfer_location(parser, command == Keyword::PUT)?;
+    let mut options = Vec::new();
+    while !matches!(parser.peek_token_ref().token, Token::EOF | Token::SemiColon) {
+        let name = parser.parse_identifier()?;
+        parser.expect_token(&Token::Eq)?;
+        let number_spelling = match parser.peek_token().token {
+            Token::Number(number, false) => Some(number),
+            sign @ (Token::Plus | Token::Minus) => match parser.peek_nth_token(1).token {
+                Token::Number(number, false) => Some(format!("{sign}{number}")),
+                _ => None,
+            },
+            _ => None,
+        };
+        // Keep typed primitives, identifiers, signed numbers, and actual bindings.
+        // Owning execution must validate option names/value shapes without evaluating them.
+        let value = parser.parse_expr()?;
+        let number_spelling = number_spelling
+            .filter(|raw| raw != &value.to_string() && file_transfer_number_matches(&value, raw));
+        options.push(FileTransferOption {
+            name,
+            value,
+            number_spelling,
+        });
+    }
+    if command == Keyword::PUT {
+        Ok(Statement::Put(Put {
+            source,
+            target,
+            options,
+        }))
+    } else {
+        Ok(Statement::Get(Get {
+            source,
+            target,
+            options,
+        }))
+    }
+}
+
+fn parse_file_transfer_location(
+    parser: &mut Parser,
+    stage: bool,
+) -> Result<FileTransferLocation, ParserError> {
+    let token = parser.next_token();
+    let (value, quoted) = match token.token {
+        Token::FileTransferLocation { value, quoted } => (value, quoted),
+        Token::Placeholder(value) => {
+            return Ok(FileTransferLocation::Binding(Expr::Value(
+                Value::Placeholder(value).with_span(token.span),
+            )));
+        }
+        _ => return parser.expected("file transfer location", token),
+    };
+    let numeric_binding = value
+        .strip_prefix(':')
+        .is_some_and(|number| !number.is_empty() && number.chars().all(|ch| ch.is_ascii_digit()));
+    if !quoted && (value == "?" || numeric_binding) {
+        return Ok(FileTransferLocation::Binding(Expr::Value(
+            Value::Placeholder(value).with_span(token.span),
+        )));
+    }
+    if stage && value.starts_with('@') {
+        let mut location = parse_file_transfer_stage_location(&value)?;
+        location.quoted = quoted;
+        return Ok(FileTransferLocation::Stage(location));
+    }
+    if !stage && value.starts_with("file://") {
+        return Ok(FileTransferLocation::Local { uri: value, quoted });
+    }
+    Err(ParserError::ParserError(if stage {
+        "Expected a stage reference or binding in transfer operand".into()
+    } else {
+        "Expected a file:// URI or binding in transfer operand".into()
+    }))
+}
+
+/// Parse an exact bound stage operand into a typed name and separate payload prefix.
+///
+/// This parses identifiers rather than manufacturing a `PUT`/`GET` SQL statement.
+/// User/table forms remain distinct; parsing does not imply local execution support.
+pub fn parse_file_transfer_stage_location(
+    value: &str,
+) -> Result<FileTransferStageLocation, ParserError> {
+    let Some(stage) = value.strip_prefix('@') else {
+        return Err(ParserError::ParserError(
+            "Expected an @stage reference".into(),
+        ));
+    };
+    let mut identifier_quote = false;
+    let mut slash = None;
+    let mut chars = stage.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        if ch == '"' {
+            if identifier_quote && chars.peek().is_some_and(|(_, ch)| *ch == '"') {
+                chars.next();
+            } else {
+                identifier_quote = !identifier_quote;
+            }
+        } else if ch == '/' && !identifier_quote {
+            slash = Some(index);
+            break;
+        }
+    }
+    if identifier_quote {
+        return Err(ParserError::ParserError(
+            "Unterminated stage identifier".into(),
+        ));
+    }
+    let (name, prefix) = match slash {
+        Some(index) => (&stage[..index], Some(String::from(&stage[index + 1..]))),
+        None => (stage, None),
+    };
+    let kind = if name == "~" {
+        FileTransferStage::User
+    } else {
+        let dialect = SnowflakeDialect;
+        let mut tokens = Tokenizer::new(&dialect, name)
+            .with_file_transfer_locations(false)
+            .tokenize_with_location()?;
+        // A comment cannot silently truncate a bound identifier. Whitespace inside
+        // a quoted identifier is part of its Word token and is preserved normally.
+        if tokens
+            .iter()
+            .any(|token| matches!(token.token, Token::Whitespace(_)))
+        {
+            return Err(ParserError::ParserError(
+                "Unexpected whitespace or comment in stage name".into(),
+            ));
+        }
+        let markers = tokens
+            .iter()
+            .filter(|token| token.token == Token::Mod)
+            .count();
+        let table = markers == 1;
+        if markers > 1
+            || (table && (tokens.len() < 2 || tokens[tokens.len() - 2].token != Token::Mod))
+        {
+            return Err(ParserError::ParserError(
+                "Expected % immediately before the final table stage identifier".into(),
+            ));
+        }
+        if table {
+            tokens.remove(tokens.len() - 2);
+        }
+        let mut parser = Parser::new(&dialect).with_tokens_with_locations(tokens);
+        let name = parser.parse_object_name(false)?;
+        if name
+            .0
+            .iter()
+            .any(|part| !matches!(part, ObjectNamePart::Identifier(_)))
+        {
+            return Err(ParserError::ParserError(
+                "Expected identifier components in transfer stage name".into(),
+            ));
+        }
+        if !matches!(parser.peek_token_ref().token, Token::EOF) {
+            return parser.expected_ref("end of stage name", parser.peek_token_ref());
+        }
+        if table {
+            FileTransferStage::Table(name)
+        } else {
+            FileTransferStage::Named(name)
+        }
+    };
+    Ok(FileTransferStageLocation {
+        kind,
+        prefix,
+        quoted: file_transfer_location_needs_quotes(value),
+    })
 }
 
 /// Parse snowflake alter dynamic table.

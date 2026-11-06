@@ -20,16 +20,241 @@
 //! See [this page](https://docs.snowflake.com/en/sql-reference/commands-data-loading) for more details.
 
 #[cfg(not(feature = "std"))]
-use alloc::string::String;
+use alloc::{format, string::String, vec::Vec};
 use core::fmt;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::ast::helpers::key_value_options::KeyValueOptions;
-use crate::ast::{Ident, ObjectName, SelectItem};
+use crate::ast::{Expr, Ident, ObjectName, SelectItem, UnaryOperator, Value};
 #[cfg(feature = "visitor")]
 use sqlparser_derive::{Visit, VisitMut};
+
+/// Snowflake `PUT` upload syntax. Execution and transfer admission are separate concerns.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct Put {
+    /// Local source URI or a binding expression.
+    pub source: FileTransferLocation,
+    /// Stage destination or a binding expression.
+    pub target: FileTransferLocation,
+    /// Ordered options, including duplicates for owning semantic validation.
+    pub options: Vec<FileTransferOption>,
+}
+
+/// Snowflake `GET` download syntax.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct Get {
+    /// Stage source or a binding expression.
+    pub source: FileTransferLocation,
+    /// Local destination URI or a binding expression.
+    pub target: FileTransferLocation,
+    /// Ordered options, including duplicates for owning semantic validation.
+    pub options: Vec<FileTransferOption>,
+}
+
+/// A transfer operand, distinct from a table relation and from arbitrary SQL text.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum FileTransferLocation {
+    /// A local URI, preserving the `file://` prefix and path bytes.
+    Local {
+        /// Exact URI; the parser does not resolve or normalize a filesystem path.
+        uri: String,
+        /// Whether the complete operand was enclosed in single quotes.
+        quoted: bool,
+    },
+    /// A typed stage reference and separate optional payload prefix.
+    Stage(FileTransferStageLocation),
+    /// A native SQL placeholder. Visitors must consume it through normal expression binding.
+    Binding(Expr),
+}
+
+/// A stage reference used by transfer syntax, without table-relation visitor annotations.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct FileTransferStageLocation {
+    /// Named, user, or table stage syntax. Parsing does not imply execution support.
+    pub kind: FileTransferStage,
+    /// Exact bytes after the first slash outside quoted identifiers; `Some("")` retains `/`.
+    pub prefix: Option<String>,
+    /// Whether the complete operand was enclosed in single quotes.
+    pub quoted: bool,
+}
+
+/// Stage kinds must remain distinct so an execution layer can explicitly refuse unsupported ones.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum FileTransferStage {
+    /// A real qualified object name, retaining every identifier's quoting.
+    Named(ObjectName),
+    /// The current user's `@~` stage.
+    User,
+    /// A table's `@[namespace.]%table` stage, retaining its qualified name.
+    Table(ObjectName),
+}
+
+/// One transfer option. Values use normal expression/value nodes, not enum-like placeholders.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct FileTransferOption {
+    /// Original option name, including its identifier quoting.
+    pub name: Ident,
+    /// Typed value traversed by normal expression binding.
+    pub value: Expr,
+    /// Original primitive numeric spelling when the numeric AST feature normalizes it.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub number_spelling: Option<String>,
+}
+
+pub(crate) fn file_transfer_number_matches(value: &Expr, raw: &str) -> bool {
+    let (value, digits) = match value {
+        Expr::UnaryOp {
+            op: UnaryOperator::Plus,
+            expr,
+        } => {
+            let Some(digits) = raw.strip_prefix('+') else {
+                return false;
+            };
+            (expr.as_ref(), digits)
+        }
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } => {
+            let Some(digits) = raw.strip_prefix('-') else {
+                return false;
+            };
+            (expr.as_ref(), digits)
+        }
+        _ if raw.starts_with(['+', '-']) => return false,
+        _ => (value, raw),
+    };
+    let Expr::Value(value) = value else {
+        return false;
+    };
+    let Ok(number) = digits.parse() else {
+        return false;
+    };
+    value.value == Value::Number(number, false)
+}
+
+impl fmt::Display for FileTransferStage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Named(name) => write!(f, "{name}"),
+            Self::User => f.write_str("~"),
+            Self::Table(name) => {
+                for (index, part) in name.0.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(".")?;
+                    }
+                    if index + 1 == name.0.len() {
+                        f.write_str("%")?;
+                    }
+                    write!(f, "{part}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl fmt::Display for FileTransferStageLocation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut value = format!("@{}", self.kind);
+        if let Some(prefix) = &self.prefix {
+            value.push('/');
+            value.push_str(prefix);
+        }
+        display_transfer_location(f, &value, self.quoted)
+    }
+}
+
+fn display_transfer_location(f: &mut fmt::Formatter, value: &str, quoted: bool) -> fmt::Result {
+    if quoted || file_transfer_location_needs_quotes(value) {
+        // Transfer paths keep backslashes literal; only the enclosing SQL quote is escaped.
+        write!(f, "'{}'", value.replace('\'', "''"))
+    } else {
+        f.write_str(value)
+    }
+}
+
+pub(crate) fn file_transfer_location_needs_quotes(value: &str) -> bool {
+    let mut stage_name = value.starts_with('@');
+    let mut identifier_quote = false;
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if stage_name && ch == '"' {
+            if identifier_quote && chars.peek() == Some(&'"') {
+                chars.next();
+            } else {
+                identifier_quote = !identifier_quote;
+            }
+        } else if stage_name && ch == '/' && !identifier_quote {
+            stage_name = false;
+        } else if !identifier_quote && (ch.is_whitespace() || ch == ';') {
+            return true;
+        }
+    }
+    false
+}
+
+impl fmt::Display for FileTransferLocation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Local { uri, quoted } => display_transfer_location(f, uri, *quoted),
+            Self::Stage(stage) => write!(f, "{stage}"),
+            Self::Binding(expr) => write!(f, "{expr}"),
+        }
+    }
+}
+
+impl fmt::Display for FileTransferOption {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}=", self.name)?;
+        if let Some(raw) = self
+            .number_spelling
+            .as_deref()
+            .filter(|raw| file_transfer_number_matches(&self.value, raw))
+        {
+            f.write_str(raw)
+        } else {
+            write!(f, "{}", self.value)
+        }
+    }
+}
+
+impl fmt::Display for Put {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PUT {} {}", self.source, self.target)?;
+        for option in &self.options {
+            write!(f, " {option}")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Get {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "GET {} {}", self.source, self.target)?;
+        for option in &self.options {
+            write!(f, " {option}")?;
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

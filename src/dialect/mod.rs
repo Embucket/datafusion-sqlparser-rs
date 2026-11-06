@@ -51,8 +51,8 @@ pub use self::mysql::MySqlDialect;
 pub use self::oracle::OracleDialect;
 pub use self::postgresql::PostgreSqlDialect;
 pub use self::redshift::RedshiftSqlDialect;
-pub use self::snowflake::parse_snowflake_stage_name;
 pub use self::snowflake::SnowflakeDialect;
+pub use self::snowflake::{parse_file_transfer_stage_location, parse_snowflake_stage_name};
 pub use self::spark::SparkSqlDialect;
 pub use self::sqlite::SQLiteDialect;
 pub use self::teradata::TeradataDialect;
@@ -1270,6 +1270,14 @@ pub trait Dialect: Debug + Any {
     /// Returns true if this dialect supports Snowflake-style named file format
     /// lifecycle commands (`ALTER`, `DROP`, `SHOW`, and `DESCRIBE`).
     fn supports_file_format_commands(&self) -> bool {
+        false
+    }
+
+    /// Supports `PUT`/`GET` with two opaque transfer operands at statement start.
+    ///
+    /// URI comment markers, globs, and stage prefixes are payload bytes only in those
+    /// operands. Normal SQL identifiers and comments retain their ordinary tokenization.
+    fn supports_file_transfer_commands(&self) -> bool {
         false
     }
 
