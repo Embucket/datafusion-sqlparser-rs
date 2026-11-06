@@ -5931,10 +5931,16 @@ fn snowflake_create_database_semicolons_in_identifiers_strings_and_comments() {
         /* ignored ; CREATE DATABASE hidden; */ SELECT ';not a separator';"#;
     let statements = Parser::parse_sql(&SnowflakeDialect, sql).unwrap();
     assert_eq!(statements.len(), 2);
-    let Statement::CreateDatabase { db_name, comment, .. } = &statements[0] else {
+    let Statement::CreateDatabase {
+        db_name, comment, ..
+    } = &statements[0]
+    else {
         panic!("expected CREATE DATABASE");
     };
-    assert_eq!(db_name, &ObjectName::from(Ident::with_quote('"', "demo;name")));
+    assert_eq!(
+        db_name,
+        &ObjectName::from(Ident::with_quote('"', "demo;name"))
+    );
     assert_eq!(comment.as_deref(), Some("keep; USE DATABASE other"));
     assert_eq!(statements[1].to_string(), "SELECT ';not a separator'");
 }
@@ -5954,6 +5960,12 @@ fn snowflake_create_database_still_requires_statement_delimiters() {
         "CREATE DATABASE demo COMMENT = 'still one statement'",
     ] {
         snowflake().verified_stmt(sql);
-        assert_eq!(snowflake().parse_sql_statements(&format!("{sql};")).unwrap().len(), 1);
+        assert_eq!(
+            snowflake()
+                .parse_sql_statements(&format!("{sql};"))
+                .unwrap()
+                .len(),
+            1
+        );
     }
 }
