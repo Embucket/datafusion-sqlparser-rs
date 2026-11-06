@@ -5891,3 +5891,69 @@ fn test_nested_structured_array_map_nullability() {
         );
     }
 }
+
+#[test]
+fn snowflake_create_database_preserves_following_statement_delimiters() {
+    use sqlparser::parser::Parser;
+
+    for sql in [
+        "CREATE DATABASE demo; USE DATABASE demo; SELECT 1",
+        "CREATE DATABASE IF NOT EXISTS demo; USE DATABASE demo; SELECT 1",
+        "CREATE DATABASE demo DATA_RETENTION_TIME_IN_DAYS=1 COMMENT='kept'; USE DATABASE demo; SELECT 1",
+    ] {
+        let statements = Parser::parse_sql(&SnowflakeDialect, sql).unwrap();
+        assert_eq!(statements.len(), 3, "{sql}");
+        assert!(matches!(statements[0], Statement::CreateDatabase { .. }));
+        assert!(matches!(statements[1], Statement::Use(Use::Database(_))));
+        assert_eq!(statements[2].to_string(), "SELECT 1");
+    }
+}
+
+#[test]
+fn snowflake_create_database_multiple_databases_and_schema_batch() {
+    use sqlparser::parser::Parser;
+
+    let sql = "CREATE DATABASE first_db; CREATE DATABASE second_db; CREATE SCHEMA second_db.app; USE SCHEMA second_db.app; SELECT 1;";
+    let statements = Parser::parse_sql(&SnowflakeDialect, sql).unwrap();
+    assert_eq!(statements.len(), 5);
+    assert!(matches!(statements[0], Statement::CreateDatabase { .. }));
+    assert!(matches!(statements[1], Statement::CreateDatabase { .. }));
+    assert!(matches!(statements[2], Statement::CreateSchema { .. }));
+    assert!(matches!(statements[3], Statement::Use(Use::Schema(_))));
+    assert_eq!(statements[4].to_string(), "SELECT 1");
+}
+
+#[test]
+fn snowflake_create_database_semicolons_in_identifiers_strings_and_comments() {
+    use sqlparser::parser::Parser;
+
+    let sql = r#"CREATE DATABASE "demo;name" COMMENT='keep; USE DATABASE other';
+        /* ignored ; CREATE DATABASE hidden; */ SELECT ';not a separator';"#;
+    let statements = Parser::parse_sql(&SnowflakeDialect, sql).unwrap();
+    assert_eq!(statements.len(), 2);
+    let Statement::CreateDatabase { db_name, comment, .. } = &statements[0] else {
+        panic!("expected CREATE DATABASE");
+    };
+    assert_eq!(db_name, &ObjectName::from(Ident::with_quote('"', "demo;name")));
+    assert_eq!(comment.as_deref(), Some("keep; USE DATABASE other"));
+    assert_eq!(statements[1].to_string(), "SELECT ';not a separator'");
+}
+
+#[test]
+fn snowflake_create_database_still_requires_statement_delimiters() {
+    for sql in [
+        "CREATE DATABASE demo USE DATABASE demo",
+        "CREATE DATABASE IF NOT EXISTS demo SELECT 1",
+        "CREATE DATABASE first_db CREATE DATABASE second_db",
+    ] {
+        assert!(snowflake().parse_sql_statements(sql).is_err(), "{sql}");
+    }
+    for sql in [
+        "CREATE DATABASE demo",
+        "CREATE DATABASE IF NOT EXISTS demo",
+        "CREATE DATABASE demo COMMENT='still one statement'",
+    ] {
+        snowflake().verified_stmt(sql);
+        assert_eq!(snowflake().parse_sql_statements(&format!("{sql};")).unwrap().len(), 1);
+    }
+}
