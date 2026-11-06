@@ -5951,7 +5951,7 @@ fn snowflake_create_database_still_requires_statement_delimiters() {
     for sql in [
         "CREATE DATABASE demo",
         "CREATE DATABASE IF NOT EXISTS demo",
-        "CREATE DATABASE demo COMMENT='still one statement'",
+        "CREATE DATABASE demo COMMENT = 'still one statement'",
     ] {
         snowflake().verified_stmt(sql);
         assert_eq!(snowflake().parse_sql_statements(&format!("{sql};")).unwrap().len(), 1);
