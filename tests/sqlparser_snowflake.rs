@@ -6585,3 +6585,157 @@ fn snowflake_warehouse_names_are_not_table_relations() {
     assert_eq!(result, ControlFlow::Continue(()));
     assert_eq!(numeric_literals, 1);
 }
+
+#[test]
+fn snowflake_table_comment_null_is_typed_and_roundtrips() {
+    // Snowflake 10.40.102 TEMP CREATE reference: 01c83e8c-0209-ab5f-0004-d66e05c171ae.
+    let Statement::CreateTable(table) =
+        snowflake().verified_stmt("CREATE TABLE t (id INT) COMMENT = NULL")
+    else {
+        panic!("expected CREATE TABLE");
+    };
+    assert!(
+        table.comment.is_none(),
+        "Snowflake comments belong to plain options"
+    );
+    let CreateTableOptions::Plain(options) = table.table_options else {
+        panic!("expected plain table options");
+    };
+    assert_eq!(options.len(), 1);
+    assert!(matches!(&options[0], SqlOption::Comment(_)));
+    assert_eq!(options[0].to_string(), "COMMENT = NULL");
+    assert_ne!(
+        options[0],
+        SqlOption::Comment(CommentDef::WithEq("NULL".into()))
+    );
+    assert_ne!(
+        options[0],
+        SqlOption::Comment(CommentDef::WithEq(String::new()))
+    );
+}
+
+#[test]
+fn snowflake_table_comment_absent_empty_and_null_string_stay_distinct() {
+    for (sql, expected) in [
+        ("CREATE TABLE t (id INT)", CreateTableOptions::None),
+        (
+            "CREATE TABLE t (id INT) COMMENT = ''",
+            CreateTableOptions::Plain(vec![SqlOption::Comment(CommentDef::WithEq(String::new()))]),
+        ),
+        (
+            "CREATE TABLE t (id INT) COMMENT = 'NULL'",
+            CreateTableOptions::Plain(vec![SqlOption::Comment(CommentDef::WithEq("NULL".into()))]),
+        ),
+        (
+            "CREATE TABLE t (id INT) COMMENT 'text'",
+            CreateTableOptions::Plain(vec![SqlOption::Comment(CommentDef::WithoutEq(
+                "text".into(),
+            ))]),
+        ),
+    ] {
+        let Statement::CreateTable(table) = snowflake().verified_stmt(sql) else {
+            panic!("expected CREATE TABLE");
+        };
+        assert_eq!(table.table_options, expected, "{sql}");
+    }
+}
+
+#[test]
+fn snowflake_table_comment_dollar_quoted_null_stays_a_string() {
+    let Statement::CreateTable(table) = snowflake().one_statement_parses_to(
+        "CREATE TABLE t (id INT) COMMENT = $$NULL$$",
+        "CREATE TABLE t (id INT) COMMENT = 'NULL'",
+    ) else {
+        panic!("expected CREATE TABLE");
+    };
+    assert_eq!(
+        table.table_options,
+        CreateTableOptions::Plain(vec![SqlOption::Comment(CommentDef::WithEq("NULL".into())),])
+    );
+}
+
+#[test]
+fn snowflake_table_comment_null_keeps_batch_delimiters() {
+    use sqlparser::parser::Parser;
+
+    let statements = Parser::parse_sql(
+        &SnowflakeDialect,
+        "CREATE TABLE t (id INT) COMMENT = NULL; SELECT 'NULL' AS text_value;",
+    )
+    .expect("table comment followed by a separate statement");
+    assert_eq!(statements.len(), 2);
+    assert_eq!(
+        statements[0].to_string(),
+        "CREATE TABLE t (id INT) COMMENT = NULL"
+    );
+    assert_eq!(statements[1].to_string(), "SELECT 'NULL' AS text_value");
+}
+
+#[test]
+fn snowflake_table_comment_null_requires_the_selected_assignment_shape() {
+    use sqlparser::parser::Parser;
+
+    for sql in [
+        "CREATE TABLE t (id INT COMMENT NULL)",
+        "CREATE TABLE t (id INT COMMENT = NULL)",
+        "CREATE TABLE t (id INT) COMMENT NULL",
+        "CREATE TABLE t (id INT) COMMENT = (NULL)",
+        "CREATE TABLE t (id INT) COMMENT = NULL || ''",
+    ] {
+        assert!(Parser::parse_sql(&SnowflakeDialect, sql).is_err(), "{sql}");
+    }
+}
+
+#[test]
+fn snowflake_table_comment_null_does_not_broaden_other_comment_grammars() {
+    use sqlparser::parser::Parser;
+
+    for sql in [
+        "CREATE STAGE s COMMENT = NULL",
+        "ALTER STAGE s SET COMMENT = NULL",
+        "CREATE FILE FORMAT f TYPE = CSV COMMENT = NULL",
+        "ALTER FILE FORMAT f SET COMMENT = NULL",
+        "CREATE VIEW v COMMENT = NULL AS SELECT 1",
+    ] {
+        assert!(Parser::parse_sql(&SnowflakeDialect, sql).is_err(), "{sql}");
+    }
+    assert!(Parser::parse_sql(&GenericDialect, "CREATE TABLE t (id INT) COMMENT = NULL").is_err());
+    let mut parser = Parser::new(&SnowflakeDialect)
+        .try_with_sql("NULL")
+        .expect("NULL token");
+    assert!(
+        parser.parse_comment_value().is_err(),
+        "the shared string parser must stay strict"
+    );
+}
+
+#[cfg(all(feature = "serde", feature = "serde_json"))]
+#[test]
+fn snowflake_table_comment_null_has_a_distinct_serde_variant() {
+    let Statement::CreateTable(table) =
+        snowflake().verified_stmt("CREATE TABLE t (id INT) COMMENT = NULL")
+    else {
+        panic!("expected CREATE TABLE");
+    };
+    let CreateTableOptions::Plain(options) = table.table_options else {
+        panic!("expected plain table options");
+    };
+    assert_eq!(
+        serde_json::to_string(&options[0]).expect("serialize typed comment"),
+        r#"{"Comment":"NullWithEq"}"#
+    );
+    let decoded: SqlOption =
+        serde_json::from_str(r#"{"Comment":"NullWithEq"}"#).expect("deserialize typed comment");
+    assert_eq!(decoded, options[0]);
+}
+
+#[cfg(feature = "visitor")]
+#[test]
+fn snowflake_table_comment_null_is_metadata_without_expression_nodes() {
+    use core::ops::ControlFlow;
+    use sqlparser::ast::visit_expressions;
+
+    let statement = snowflake().verified_stmt("CREATE TABLE t (id INT) COMMENT = NULL");
+    let result = visit_expressions(&statement, |_| ControlFlow::Break("unexpected expression"));
+    assert_eq!(result, ControlFlow::Continue(()));
+}
