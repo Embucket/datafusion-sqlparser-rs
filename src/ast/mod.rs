@@ -9290,6 +9290,7 @@ impl fmt::Display for SqlOption {
                 CommentDef::WithoutEq(comment) => {
                     write!(f, "COMMENT '{comment}'")
                 }
+                CommentDef::NullWithEq => write!(f, "COMMENT = NULL"),
             },
             SqlOption::NamedParenthesizedList(value) => {
                 write!(f, "{} = ", value.key)?;
@@ -11085,12 +11086,15 @@ pub enum CommentDef {
     WithEq(String),
     /// Comment variant that omits the `=` when displayed.
     WithoutEq(String),
+    /// Explicit `COMMENT = NULL`, admitted only by Snowflake CREATE TABLE syntax.
+    NullWithEq,
 }
 
 impl Display for CommentDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CommentDef::WithEq(comment) | CommentDef::WithoutEq(comment) => write!(f, "{comment}"),
+            CommentDef::NullWithEq => write!(f, "NULL"),
         }
     }
 }
