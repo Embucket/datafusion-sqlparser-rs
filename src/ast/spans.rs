@@ -328,6 +328,12 @@ impl Spanned for Values {
 impl Spanned for Statement {
     fn span(&self) -> Span {
         match self {
+            // These account-level commands do not yet retain complete statement spans.
+            Statement::CreateWarehouse(_)
+            | Statement::AlterWarehouse(_)
+            | Statement::ShowWarehouses(_)
+            | Statement::DescribeWarehouse(_)
+            | Statement::DropWarehouse(_) => Span::empty(),
             Statement::Analyze(analyze) => analyze.span(),
             Statement::Truncate(truncate) => truncate.span(),
             Statement::Msck(msck) => msck.span(),

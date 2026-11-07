@@ -1034,6 +1034,7 @@ define_keywords!(
     SUPERUSER,
     SUPPORT,
     SUSPEND,
+    SUSPENDED,
     SWAP,
     SYMMETRIC,
     SYNC,

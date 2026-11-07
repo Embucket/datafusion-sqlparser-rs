@@ -30,6 +30,14 @@ This crate contains a lexer and parser for SQL that conforms with the
 is used as a foundation for SQL query engines, vendor-specific
 parsers, and various SQL analysis.
 
+Snowflake warehouse parsing uses typed CREATE, ALTER, SHOW,
+DESCRIBE and DROP nodes in `ast::helpers::stmt_warehouse`; USE keeps its existing
+AST. It retains quoted/multipart account names and ordered primitive options for
+later semantic validation. Parsing does not implement warehouses, authorize an
+operation, evaluate properties, or establish wire metadata/error parity. Tags,
+CREATE OR ALTER, adaptive/interactive control, ABORT ALL QUERIES and SHOW privilege
+filters remain outside this selected grammar.
+
 ## Example
 
 To parse a simple `SELECT` statement:

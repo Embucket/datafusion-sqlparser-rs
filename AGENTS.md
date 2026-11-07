@@ -27,6 +27,14 @@ snowflake().one_statement_parses_to(
 
 ## Analyzing Parsing Issues
 
+Warehouse commands use Snowflake-only typed syntax in
+`ast/helpers/stmt_warehouse.rs`, dispatched through the existing Snowflake dialect
+override. Keep account-object names distinct from table relations. Preserve ordered
+primitive properties, including duplicate or semantically invalid values, for the
+execution consumer to validate. Never evaluate properties, normalize account identity,
+consume statement delimiters inside option loops, or infer runtime support from an AST.
+Run the required fork checks below before committing changes to this syntax.
+
 For Snowflake `PUT`/`GET`, keep opaque location lexing confined to the two operands
 at actual statement start. Preserve ordinary comments and identifiers/functions
 named `PUT`/`GET`. Keep stage `ObjectName` quoting separate from the exact payload

@@ -6338,3 +6338,250 @@ fn snowflake_create_stage_duplicate_integration_or_endpoint_stays_unsupported() 
         assert!(snowflake().parse_sql_statements(&sql).is_err(), "{sql}");
     }
 }
+
+// Logical-warehouse syntax only. These controls use existing parser/Display APIs so
+// the tests-first patch compiles before the new AST is added. Runtime effects and
+// Snowflake result/error metadata are not established by parsing these statements.
+#[test]
+fn snowflake_warehouse_create_roundtrips() {
+    for sql in [
+        "CREATE WAREHOUSE demo",
+        "CREATE WAREHOUSE IF NOT EXISTS demo",
+        "CREATE OR REPLACE WAREHOUSE demo",
+        "CREATE OR REPLACE WAREHOUSE IF NOT EXISTS demo",
+        "CREATE WAREHOUSE \"Mixed\"\"Quote\" WITH WAREHOUSE_TYPE = STANDARD WAREHOUSE_SIZE = XSMALL COMMENT = 'a ''quoted'' comment'",
+        "CREATE WAREHOUSE account.warehouse WAREHOUSE_SIZE = 'SMALL' AUTO_SUSPEND = NULL",
+        "CREATE WAREHOUSE demo AUTO_SUSPEND = -1 MAX_CLUSTER_COUNT = 2",
+        "CREATE WAREHOUSE demo COMMENT = 'first' COMMENT = 'second'",
+    ] {
+        snowflake().verified_stmt(sql);
+    }
+    snowflake().one_statement_parses_to(
+        "CREATE WAREHOUSE demo AUTO_RESUME = TRUE INITIALLY_SUSPENDED = FALSE",
+        "CREATE WAREHOUSE demo AUTO_RESUME = true INITIALLY_SUSPENDED = false",
+    );
+}
+
+#[test]
+fn snowflake_warehouse_alter_roundtrips() {
+    for sql in [
+        "ALTER WAREHOUSE demo SUSPEND",
+        "ALTER WAREHOUSE SUSPEND",
+        "ALTER WAREHOUSE IF EXISTS demo RESUME IF SUSPENDED",
+        "ALTER WAREHOUSE IF EXISTS RESUME IF SUSPENDED",
+        "ALTER WAREHOUSE \"SUSPEND\" RESUME",
+        "ALTER WAREHOUSE demo SET WAREHOUSE_SIZE = SMALL COMMENT = 'x' AUTO_SUSPEND = 0",
+        "ALTER WAREHOUSE IF EXISTS demo UNSET COMMENT, AUTO_SUSPEND",
+        "ALTER WAREHOUSE demo RENAME TO \"New.Name\"",
+        "ALTER WAREHOUSE a.b RENAME TO c.d",
+    ] {
+        snowflake().verified_stmt(sql);
+    }
+}
+
+#[test]
+fn snowflake_warehouse_drop_and_describe_roundtrip() {
+    for sql in [
+        "DROP WAREHOUSE demo",
+        "DROP WAREHOUSE IF EXISTS \"Mixed.Name\"",
+        "DROP WAREHOUSE IF EXISTS a.b",
+        "DESC WAREHOUSE demo",
+        "DESCRIBE WAREHOUSE \"Mixed\"\"Quote\"",
+        "DESCRIBE WAREHOUSE a.b",
+    ] {
+        snowflake().verified_stmt(sql);
+    }
+}
+
+#[test]
+fn snowflake_warehouse_show_has_a_native_statement() {
+    // Existing selected reference accepts these individual forms. It does not
+    // establish populated ordering or the effect of STARTS WITH / LIMIT.
+    for sql in [
+        "SHOW WAREHOUSES",
+        "SHOW WAREHOUSES LIKE 'absent%'",
+        "SHOW WAREHOUSES LIKE 'x'' OR ''1''=''1'",
+        "SHOW TERSE WAREHOUSES LIKE 'absent%'",
+        "SHOW WAREHOUSES STARTS WITH 'WH'",
+        "SHOW WAREHOUSES LIMIT 1",
+    ] {
+        let statement = snowflake().verified_stmt(sql);
+        assert!(!matches!(statement, Statement::ShowVariable { .. }));
+    }
+}
+
+#[test]
+fn snowflake_warehouse_batches_keep_the_statement_delimiter() {
+    let statements = snowflake()
+        .parse_sql_statements(
+            "CREATE WAREHOUSE demo COMMENT = 'one;two'; SELECT 1; ALTER WAREHOUSE demo SET COMMENT = 'three'; DROP WAREHOUSE demo; SELECT 2",
+        )
+        .expect("five complete statements");
+    assert_eq!(statements.len(), 5);
+    assert_eq!(
+        statements[0].to_string(),
+        "CREATE WAREHOUSE demo COMMENT = 'one;two'"
+    );
+    assert_eq!(statements[1].to_string(), "SELECT 1");
+    assert_eq!(statements[3].to_string(), "DROP WAREHOUSE demo");
+    assert_eq!(statements[4].to_string(), "SELECT 2");
+}
+
+#[test]
+fn snowflake_warehouse_malformed_or_unselected_syntax_is_not_discarded() {
+    for sql in [
+        "CREATE WAREHOUSE",
+        "CREATE TEMPORARY WAREHOUSE demo",
+        "CREATE WAREHOUSE demo WITH",
+        "CREATE WAREHOUSE demo WAREHOUSE_SIZE =",
+        "CREATE WAREHOUSE demo WAREHOUSE_SIZE = ABS(1)",
+        "CREATE WAREHOUSE demo AUTO_SUSPEND = (SELECT 1)",
+        "CREATE WAREHOUSE demo WAREHOUSE_SIZE = SMALL, COMMENT = 'x'",
+        "ALTER WAREHOUSE demo SET",
+        "ALTER WAREHOUSE demo UNSET",
+        "ALTER WAREHOUSE demo RENAME TO",
+        "DROP WAREHOUSE demo, peer",
+        "DROP WAREHOUSE demo CASCADE",
+        "DESCRIBE WAREHOUSE",
+        "SHOW WAREHOUSES IN SCHEMA app",
+        "SHOW WAREHOUSES LIKE 'x' unexpected",
+    ] {
+        assert!(snowflake().parse_sql_statements(sql).is_err(), "{sql}");
+    }
+}
+
+#[test]
+fn snowflake_warehouse_native_and_other_dialect_paths_are_preserved() {
+    for sql in [
+        "USE WAREHOUSE demo",
+        "USE WAREHOUSE IDENTIFIER('demo')",
+        "DROP TABLE warehouse",
+        "SHOW TABLES",
+        "DESCRIBE TABLE warehouse",
+        "CREATE TABLE warehouse (id INT)",
+        "EXPLAIN SELECT 1",
+        "PUT file:///tmp/warehouse.csv @warehouse AUTO_COMPRESS=false",
+    ] {
+        snowflake().verified_stmt(sql);
+    }
+    let generic = GenericDialect {};
+    assert!(sqlparser::parser::Parser::parse_sql(&generic, "CREATE WAREHOUSE demo").is_err());
+    let ordinary = sqlparser::parser::Parser::parse_sql(&generic, "DROP TABLE warehouse")
+        .expect("unchanged generic DROP");
+    assert_eq!(ordinary[0].to_string(), "DROP TABLE warehouse");
+}
+
+#[test]
+fn snowflake_warehouse_typed_options_keep_identity_order_and_semantic_inputs() {
+    let Statement::CreateWarehouse(command) = snowflake().verified_stmt(
+        "CREATE OR REPLACE WAREHOUSE IF NOT EXISTS \"Mixed.Name\" WITH WAREHOUSE_SIZE = SMALL AUTO_SUSPEND = -1 AUTO_RESUME = false COMMENT = 'first' COMMENT = 'second'",
+    ) else {
+        panic!("expected typed CREATE WAREHOUSE");
+    };
+    assert!(command.or_replace);
+    assert!(command.if_not_exists);
+    assert!(command.with_keyword);
+    assert_eq!(command.name.to_string(), "\"Mixed.Name\"");
+    assert_eq!(command.options.len(), 5);
+    assert_eq!(command.options[3].name.value, "COMMENT");
+    assert_eq!(command.options[4].name.value, "COMMENT");
+    assert!(matches!(&command.options[0].value, Expr::Identifier(size) if size.value == "SMALL"));
+    assert!(matches!(
+        &command.options[1].value,
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            ..
+        }
+    ));
+    assert!(
+        matches!(&command.options[2].value, Expr::Value(value) if value.value == Value::Boolean(false))
+    );
+    assert!(
+        matches!(&command.options[3].value, Expr::Value(value) if value.value == Value::SingleQuotedString("first".into()))
+    );
+    assert!(
+        matches!(&command.options[4].value, Expr::Value(value) if value.value == Value::SingleQuotedString("second".into()))
+    );
+}
+
+#[test]
+fn snowflake_warehouse_typed_targets_and_actions_stay_distinct() {
+    use sqlparser::ast::helpers::stmt_warehouse::AlterWarehouseAction;
+
+    let Statement::AlterWarehouse(command) =
+        snowflake().verified_stmt("ALTER WAREHOUSE IF EXISTS RESUME IF SUSPENDED")
+    else {
+        panic!("expected typed ALTER WAREHOUSE");
+    };
+    assert!(command.if_exists);
+    assert!(command.name.is_none());
+    assert_eq!(
+        command.action,
+        AlterWarehouseAction::Resume { if_suspended: true }
+    );
+
+    let Statement::AlterWarehouse(command) =
+        snowflake().verified_stmt("ALTER WAREHOUSE \"SUSPEND\" UNSET COMMENT, AUTO_SUSPEND")
+    else {
+        panic!("expected typed ALTER WAREHOUSE");
+    };
+    assert_eq!(
+        command.name.expect("explicit target").to_string(),
+        "\"SUSPEND\""
+    );
+    assert!(matches!(command.action, AlterWarehouseAction::Unset(names) if names.len() == 2));
+
+    let Statement::DescribeWarehouse(command) = snowflake().verified_stmt("DESC WAREHOUSE a.b")
+    else {
+        panic!("expected typed DESCRIBE WAREHOUSE");
+    };
+    assert_eq!(command.describe_alias, DescribeAlias::Desc);
+    assert_eq!(command.name.to_string(), "a.b");
+
+    let Statement::DropWarehouse(command) =
+        snowflake().verified_stmt("DROP WAREHOUSE IF EXISTS \"One.Name\"")
+    else {
+        panic!("expected typed DROP WAREHOUSE");
+    };
+    assert!(command.if_exists);
+    assert_eq!(command.name.to_string(), "\"One.Name\"");
+
+    let Statement::ShowWarehouses(command) =
+        snowflake().verified_stmt("SHOW TERSE WAREHOUSES LIKE 'absent%'")
+    else {
+        panic!("expected typed SHOW WAREHOUSES");
+    };
+    assert!(command.terse);
+    assert_eq!(command.like_pattern.as_deref(), Some("absent%"));
+    assert!(command.starts_with.is_none());
+    assert!(command.limit.is_none());
+}
+
+#[cfg(feature = "visitor")]
+#[test]
+fn snowflake_warehouse_names_are_not_table_relations() {
+    use core::ops::ControlFlow;
+    use sqlparser::ast::{visit_expressions, visit_relations};
+
+    for sql in [
+        "CREATE WAREHOUSE wh COMMENT = 'text'",
+        "ALTER WAREHOUSE wh RENAME TO peer",
+        "SHOW WAREHOUSES LIMIT 1",
+        "DESCRIBE WAREHOUSE wh",
+        "DROP WAREHOUSE wh",
+    ] {
+        let statement = snowflake().verified_stmt(sql);
+        let result = visit_relations(&statement, |_| ControlFlow::Break("unexpected relation"));
+        assert_eq!(result, ControlFlow::Continue(()), "{sql}");
+    }
+    let statement = snowflake().verified_stmt("CREATE WAREHOUSE wh AUTO_SUSPEND = -1");
+    let mut numeric_literals = 0;
+    let result = visit_expressions(&statement, |expr| {
+        if matches!(expr, Expr::Value(value) if matches!(&value.value, Value::Number(..))) {
+            numeric_literals += 1;
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    assert_eq!(result, ControlFlow::Continue(()));
+    assert_eq!(numeric_literals, 1);
+}

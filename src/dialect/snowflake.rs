@@ -29,16 +29,20 @@ use crate::ast::helpers::stmt_data_loading::{
     FileTransferStage, FileTransferStageLocation, Get, Put, StageLoadSelectItem,
     StageLoadSelectItemKind, StageParamsObject,
 };
+use crate::ast::helpers::stmt_warehouse::{
+    AlterWarehouse, AlterWarehouseAction, CreateWarehouse, DescribeWarehouse, DropWarehouse,
+    ShowWarehouses, WarehouseOption,
+};
 use crate::ast::{
     AlterTable, AlterTableOperation, AlterTableType, CatalogSyncNamespaceMode, CloudProviderParams,
     ColumnOption, ColumnPolicy, ColumnPolicyProperty, ContactEntry, CopyIntoSnowflakeKind,
-    CreateTable, CreateTableLikeKind, DollarQuotedString, Expr, Ident, IdentityParameters,
-    IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
-    InitializeKind, Insert, MultiTableInsertIntoClause, MultiTableInsertType,
-    MultiTableInsertValue, MultiTableInsertValues, MultiTableInsertWhenClause, ObjectName,
-    ObjectNamePart, RefreshModeKind, RowAccessPolicy, ShowObjects, SqlOption, Statement,
-    StorageLifecyclePolicy, StorageSerializationPolicy, TableObject, TagsColumnOption, Value,
-    WrappedCollection,
+    CreateTable, CreateTableLikeKind, DescribeAlias, DollarQuotedString, Expr, Ident,
+    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
+    IdentityPropertyOrder, InitializeKind, Insert, MultiTableInsertIntoClause,
+    MultiTableInsertType, MultiTableInsertValue, MultiTableInsertValues,
+    MultiTableInsertWhenClause, ObjectName, ObjectNamePart, RefreshModeKind, RowAccessPolicy,
+    ShowObjects, SqlOption, Statement, StorageLifecyclePolicy, StorageSerializationPolicy,
+    TableObject, TagsColumnOption, Value, WrappedCollection,
 };
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
@@ -278,6 +282,23 @@ impl Dialect for SnowflakeDialect {
             return Some(parse_file_transfer_command(command, parser));
         }
 
+        if let Some(alias) = parser.parse_one_of_keywords(&[Keyword::DESC, Keyword::DESCRIBE]) {
+            if parser.parse_keyword(Keyword::WAREHOUSE) {
+                let describe_alias = if alias == Keyword::DESC {
+                    DescribeAlias::Desc
+                } else {
+                    DescribeAlias::Describe
+                };
+                return Some(parser.parse_object_name(false).map(|name| {
+                    Statement::DescribeWarehouse(DescribeWarehouse {
+                        describe_alias,
+                        name,
+                    })
+                }));
+            }
+            parser.prev_token();
+        }
+
         if parser.parse_keyword(Keyword::BEGIN) {
             // Snowflake supports both `BEGIN TRANSACTION` and `BEGIN ... END` blocks.
             // If the next keyword indicates a transaction statement, let the
@@ -321,6 +342,14 @@ impl Dialect for SnowflakeDialect {
             return Some(parse_alter_file_format(parser));
         }
 
+        if parser.parse_keywords(&[Keyword::ALTER, Keyword::WAREHOUSE]) {
+            return Some(parse_alter_warehouse(parser));
+        }
+
+        if parser.parse_keywords(&[Keyword::DROP, Keyword::WAREHOUSE]) {
+            return Some(parse_drop_warehouse(parser));
+        }
+
         if parser.parse_keyword(Keyword::CREATE) {
             // possibly CREATE STAGE
             //[ OR  REPLACE ]
@@ -353,7 +382,16 @@ impl Dialect for SnowflakeDialect {
                 _ => {}
             }
 
-            if parser.parse_keyword(Keyword::STAGE) {
+            if global.is_none()
+                && !dynamic
+                && !temporary
+                && !volatile
+                && !transient
+                && !iceberg
+                && parser.parse_keyword(Keyword::WAREHOUSE)
+            {
+                return Some(parse_create_warehouse(or_replace, parser));
+            } else if parser.parse_keyword(Keyword::STAGE) {
                 // OK - this is CREATE STAGE statement
                 return Some(parse_create_stage(or_replace, temporary, parser));
             } else if parser.parse_keywords(&[Keyword::FILE, Keyword::FORMAT]) {
@@ -406,6 +444,9 @@ impl Dialect for SnowflakeDialect {
             let terse = parser.parse_keyword(Keyword::TERSE);
             if parser.parse_keyword(Keyword::OBJECTS) {
                 return Some(parse_show_objects(terse, parser));
+            }
+            if parser.parse_keyword(Keyword::WAREHOUSES) {
+                return Some(parse_show_warehouses(terse, parser));
             }
             //Give back Keyword::TERSE
             if terse {
@@ -2483,4 +2524,134 @@ fn parse_multi_table_insert_when_clauses(
     }
 
     Ok((when_clauses, else_clause))
+}
+
+fn parse_create_warehouse(or_replace: bool, parser: &mut Parser) -> Result<Statement, ParserError> {
+    let if_not_exists = parser.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+    let name = parser.parse_object_name(false)?;
+    let with_keyword = parser.parse_keyword(Keyword::WITH);
+    let options = parse_warehouse_options(parser, with_keyword)?;
+    Ok(Statement::CreateWarehouse(CreateWarehouse {
+        or_replace,
+        if_not_exists,
+        name,
+        with_keyword,
+        options,
+    }))
+}
+
+fn parse_warehouse_number(parser: &mut Parser) -> Result<Expr, ParserError> {
+    let numeric = matches!(parser.peek_token_ref().token, Token::Number(..))
+        || (matches!(parser.peek_token_ref().token, Token::Plus | Token::Minus)
+            && matches!(parser.peek_nth_token(1).token, Token::Number(..)));
+    if !numeric {
+        return parser.expected_ref("numeric warehouse literal", parser.peek_token_ref());
+    }
+    parser.parse_number()
+}
+
+fn parse_warehouse_option_value(parser: &mut Parser) -> Result<Expr, ParserError> {
+    match parser.peek_token().token {
+        Token::Number(..) | Token::Plus | Token::Minus => parse_warehouse_number(parser),
+        Token::SingleQuotedString(_) | Token::DollarQuotedString(_) => {
+            parser.parse_value().map(Expr::Value)
+        }
+        Token::Word(word)
+            if matches!(word.keyword, Keyword::TRUE | Keyword::FALSE | Keyword::NULL) =>
+        {
+            parser.parse_value().map(Expr::Value)
+        }
+        Token::Word(_) => parser.parse_identifier().map(Expr::Identifier),
+        _ => parser.expected_ref("primitive warehouse option value", parser.peek_token_ref()),
+    }
+}
+
+fn parse_warehouse_options(
+    parser: &mut Parser,
+    required: bool,
+) -> Result<Vec<WarehouseOption>, ParserError> {
+    let mut options = Vec::new();
+    loop {
+        match parser.peek_token_ref().token {
+            Token::EOF | Token::SemiColon => break,
+            Token::Word(_) => {
+                let name = parser.parse_identifier()?;
+                parser.expect_token(&Token::Eq)?;
+                let value = parse_warehouse_option_value(parser)?;
+                options.push(WarehouseOption { name, value });
+            }
+            _ => {
+                return parser
+                    .expected_ref("warehouse option or statement end", parser.peek_token_ref());
+            }
+        }
+    }
+    if required && options.is_empty() {
+        return parser.expected_ref("at least one warehouse option", parser.peek_token_ref());
+    }
+    Ok(options)
+}
+
+fn parse_alter_warehouse(parser: &mut Parser) -> Result<Statement, ParserError> {
+    let if_exists = parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+    let name = if parser
+        .peek_one_of_keywords(&[Keyword::SUSPEND, Keyword::RESUME])
+        .is_some()
+    {
+        None
+    } else {
+        Some(parser.parse_object_name(false)?)
+    };
+    let action = if parser.parse_keyword(Keyword::SUSPEND) {
+        AlterWarehouseAction::Suspend
+    } else if parser.parse_keyword(Keyword::RESUME) {
+        let if_suspended = parser.parse_keywords(&[Keyword::IF, Keyword::SUSPENDED]);
+        AlterWarehouseAction::Resume { if_suspended }
+    } else if name.is_some() && parser.parse_keyword(Keyword::SET) {
+        AlterWarehouseAction::Set(parse_warehouse_options(parser, true)?)
+    } else if name.is_some() && parser.parse_keyword(Keyword::UNSET) {
+        AlterWarehouseAction::Unset(parser.parse_comma_separated(|p| p.parse_identifier())?)
+    } else if name.is_some() && parser.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+        AlterWarehouseAction::RenameTo(parser.parse_object_name(false)?)
+    } else {
+        return parser.expected_ref(
+            "warehouse SUSPEND, RESUME, SET, UNSET or RENAME TO",
+            parser.peek_token_ref(),
+        );
+    };
+    Ok(Statement::AlterWarehouse(AlterWarehouse {
+        if_exists,
+        name,
+        action,
+    }))
+}
+
+fn parse_drop_warehouse(parser: &mut Parser) -> Result<Statement, ParserError> {
+    let if_exists = parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+    let name = parser.parse_object_name(false)?;
+    Ok(Statement::DropWarehouse(DropWarehouse { if_exists, name }))
+}
+
+fn parse_show_warehouses(terse: bool, parser: &mut Parser) -> Result<Statement, ParserError> {
+    let like_pattern = if parser.parse_keyword(Keyword::LIKE) {
+        Some(parser.parse_literal_string()?)
+    } else {
+        None
+    };
+    let starts_with = if parser.parse_keywords(&[Keyword::STARTS, Keyword::WITH]) {
+        Some(parser.parse_literal_string()?)
+    } else {
+        None
+    };
+    let limit = if parser.parse_keyword(Keyword::LIMIT) {
+        Some(parse_warehouse_number(parser)?)
+    } else {
+        None
+    };
+    Ok(Statement::ShowWarehouses(ShowWarehouses {
+        terse,
+        like_pattern,
+        starts_with,
+        limit,
+    }))
 }
