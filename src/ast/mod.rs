@@ -30,6 +30,9 @@ use helpers::{
         AlterFileFormatOperation, AlterStageOperation, FileStagingCommand, Get, Put,
         StageLoadSelectItemKind,
     },
+    stmt_warehouse::{
+        AlterWarehouse, CreateWarehouse, DescribeWarehouse, DropWarehouse, ShowWarehouses,
+    },
 };
 
 use core::cmp::Ordering;
@@ -5097,6 +5100,16 @@ pub enum Statement {
     /// ```
     /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-reset.html)
     Reset(ResetStatement),
+    /// Snowflake `CREATE WAREHOUSE` syntax; semantic admission belongs to the consumer.
+    CreateWarehouse(CreateWarehouse),
+    /// Snowflake `ALTER WAREHOUSE` syntax.
+    AlterWarehouse(AlterWarehouse),
+    /// Snowflake `SHOW WAREHOUSES` syntax, distinct from SHOW session variables.
+    ShowWarehouses(ShowWarehouses),
+    /// Snowflake `DESC[RIBE] WAREHOUSE` syntax, distinct from table description.
+    DescribeWarehouse(DescribeWarehouse),
+    /// Snowflake single-target `DROP WAREHOUSE` syntax.
+    DropWarehouse(DropWarehouse),
 }
 
 impl From<Analyze> for Statement {
@@ -6732,6 +6745,11 @@ impl fmt::Display for Statement {
             Statement::Get(command) => write!(f, "{command}"),
             Statement::ExportData(e) => write!(f, "{e}"),
             Statement::CreateUser(s) => write!(f, "{s}"),
+            Statement::CreateWarehouse(s) => write!(f, "{s}"),
+            Statement::AlterWarehouse(s) => write!(f, "{s}"),
+            Statement::ShowWarehouses(s) => write!(f, "{s}"),
+            Statement::DescribeWarehouse(s) => write!(f, "{s}"),
+            Statement::DropWarehouse(s) => write!(f, "{s}"),
             Statement::AlterSchema(s) => write!(f, "{s}"),
             Statement::Vacuum(s) => write!(f, "{s}"),
             Statement::AlterUser(s) => write!(f, "{s}"),

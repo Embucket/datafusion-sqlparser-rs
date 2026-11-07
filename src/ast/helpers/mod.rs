@@ -25,3 +25,5 @@ pub mod stmt_create_database;
 pub mod stmt_create_table;
 /// Helpers for data loading/unloading related statements (stages, PUT, COPY INTO).
 pub mod stmt_data_loading;
+/// Snowflake warehouse lifecycle syntax, without execution or account semantics.
+pub mod stmt_warehouse;
