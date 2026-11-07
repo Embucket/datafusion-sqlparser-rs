@@ -38,6 +38,18 @@ operation, evaluate properties, or establish wire metadata/error parity. Tags,
 CREATE OR ALTER, adaptive/interactive control, ABORT ALL QUERIES and SHOW privilege
 filters remain outside this selected grammar.
 
+The Snowflake table-comment source preparation adds explicit `COMMENT = NULL` as
+`SqlOption::Comment(CommentDef::NullWithEq)` within `CreateTableOptions::Plain`.
+An absent clause, `COMMENT = ''`, `COMMENT = 'NULL'` and typed NULL remain distinct.
+Existing string and dollar-quoted comments keep their string AST variants. Only
+the dedicated CREATE TABLE arm admits NULL; shared column/stage/file-format/view
+and connector string parsers remain strict, as does table `COMMENT NULL` without
+`=`. The selected Snowflake 10.40.102 reference is a temporary CREATE table
+(query `01c83e8c-0209-ab5f-0004-d66e05c171ae`), without a persistence/runtime claim.
+This preparation is unqualified until the fork checks run. The additive public
+enum variant can break external exhaustive matches or old serde readers; existing
+string constructors/representations stay intact, without a binary ABI guarantee.
+
 ## Example
 
 To parse a simple `SELECT` statement:

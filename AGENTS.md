@@ -35,6 +35,14 @@ execution consumer to validate. Never evaluate properties, normalize account ide
 consume statement delimiters inside option loops, or infer runtime support from an AST.
 Run the required fork checks below before committing changes to this syntax.
 
+Snowflake CREATE TABLE's dedicated COMMENT option admits explicit `= NULL` as
+`SqlOption::Comment(CommentDef::NullWithEq)` in plain table options. Keep existing
+string variants and the shared `parse_comment_value` strict: column, stage, file
+format, view and connector comments do not gain NULL syntax. Do not collapse NULL
+into an empty string or absent clause, infer no-`=` NULL syntax, or rewrite SQL.
+The additive public enum variant requires an exhaustive-match/serde consumer audit
+and a coherent parser/DataFusion/engine pin qualification before runtime claims.
+
 For Snowflake `PUT`/`GET`, keep opaque location lexing confined to the two operands
 at actual statement start. Preserve ordinary comments and identifiers/functions
 named `PUT`/`GET`. Keep stage `ObjectName` quoting separate from the exact payload

@@ -35,14 +35,14 @@ use crate::ast::helpers::stmt_warehouse::{
 };
 use crate::ast::{
     AlterTable, AlterTableOperation, AlterTableType, CatalogSyncNamespaceMode, CloudProviderParams,
-    ColumnOption, ColumnPolicy, ColumnPolicyProperty, ContactEntry, CopyIntoSnowflakeKind,
-    CreateTable, CreateTableLikeKind, DescribeAlias, DollarQuotedString, Expr, Ident,
-    IdentityParameters, IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind,
-    IdentityPropertyOrder, InitializeKind, Insert, MultiTableInsertIntoClause,
-    MultiTableInsertType, MultiTableInsertValue, MultiTableInsertValues,
-    MultiTableInsertWhenClause, ObjectName, ObjectNamePart, RefreshModeKind, RowAccessPolicy,
-    ShowObjects, SqlOption, Statement, StorageLifecyclePolicy, StorageSerializationPolicy,
-    TableObject, TagsColumnOption, Value, WrappedCollection,
+    ColumnOption, ColumnPolicy, ColumnPolicyProperty, CommentDef, ContactEntry,
+    CopyIntoSnowflakeKind, CreateTable, CreateTableLikeKind, DescribeAlias, DollarQuotedString,
+    Expr, Ident, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
+    IdentityPropertyKind, IdentityPropertyOrder, InitializeKind, Insert,
+    MultiTableInsertIntoClause, MultiTableInsertType, MultiTableInsertValue,
+    MultiTableInsertValues, MultiTableInsertWhenClause, ObjectName, ObjectNamePart,
+    RefreshModeKind, RowAccessPolicy, ShowObjects, SqlOption, Statement, StorageLifecyclePolicy,
+    StorageSerializationPolicy, TableObject, TagsColumnOption, Value, WrappedCollection,
 };
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
@@ -1141,11 +1141,18 @@ pub fn parse_create_table(
                     builder = builder.copy_grants(true);
                 }
                 Keyword::COMMENT => {
-                    // Rewind the COMMENT keyword
-                    parser.prev_token();
-                    if let Some(comment_def) = parser.parse_optional_inline_comment()? {
-                        plain_options.push(SqlOption::Comment(comment_def))
-                    }
+                    let has_eq = parser.consume_token(&Token::Eq);
+                    let comment_def = if has_eq && parser.parse_keyword(Keyword::NULL) {
+                        CommentDef::NullWithEq
+                    } else {
+                        let comment = parser.parse_comment_value()?;
+                        if has_eq {
+                            CommentDef::WithEq(comment)
+                        } else {
+                            CommentDef::WithoutEq(comment)
+                        }
+                    };
+                    plain_options.push(SqlOption::Comment(comment_def));
                 }
                 Keyword::AS => {
                     let query = parser.parse_query()?;
