@@ -2483,8 +2483,12 @@ impl Spanned for AlterSchemaOperation {
                     .chain(options.iter().flat_map(|i| i.iter().map(|i| i.span()))),
             ),
             AlterSchemaOperation::DropReplica { replica } => replica.span,
-            AlterSchemaOperation::SetOptionsParens { options } => {
+            AlterSchemaOperation::SetOptionsParens { options }
+            | AlterSchemaOperation::SetOptions { options } => {
                 union_spans(options.iter().map(|i| i.span()))
+            }
+            AlterSchemaOperation::UnsetOptions { options } => {
+                union_spans(options.iter().map(|i| i.span))
             }
             AlterSchemaOperation::Rename { name } => name.span(),
             AlterSchemaOperation::OwnerTo { owner } => {

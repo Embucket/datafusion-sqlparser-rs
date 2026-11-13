@@ -11574,6 +11574,20 @@ impl<'a> Parser<'a> {
         } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
             let owner = self.parse_owner()?;
             AlterSchemaOperation::OwnerTo { owner }
+        } else if self.dialect.supports_alter_schema_options() && self.parse_keyword(Keyword::SET) {
+            let options = self.parse_alter_schema_set_options()?;
+            AlterSchemaOperation::SetOptions { options }
+        } else if self.dialect.supports_alter_schema_options() && self.parse_keyword(Keyword::UNSET)
+        {
+            let options = self.parse_comma_separated_with_trailing_commas(
+                Self::parse_alter_schema_option_name,
+                false,
+                Self::is_reserved_for_column_alias,
+            )?;
+            if !matches!(self.peek_token_ref().token, Token::EOF | Token::SemiColon) {
+                return self.expected_ref("comma or statement end", self.peek_token_ref());
+            }
+            AlterSchemaOperation::UnsetOptions { options }
         } else {
             return self.expected_ref("ALTER SCHEMA operation", self.peek_token_ref());
         };
@@ -11582,6 +11596,62 @@ impl<'a> Parser<'a> {
             if_exists,
             operations: vec![operation],
         }))
+    }
+
+    fn parse_alter_schema_option_name(&mut self) -> Result<Ident, ParserError> {
+        if !matches!(self.peek_token_ref().token, Token::Word(_))
+            || self
+                .peek_one_of_keywords(&[Keyword::TAG, Keyword::CONTACT])
+                .is_some()
+        {
+            return self.expected_ref("primitive schema property name", self.peek_token_ref());
+        }
+        self.parse_identifier()
+    }
+
+    fn parse_alter_schema_set_options(&mut self) -> Result<Vec<SqlOption>, ParserError> {
+        let mut options = Vec::new();
+        loop {
+            let key = self.parse_alter_schema_option_name()?;
+            self.expect_token(&Token::Eq)?;
+            let value = match self.peek_token_ref().token {
+                Token::Plus | Token::Minus
+                    if !matches!(self.peek_nth_token_ref(1).token, Token::Number(..)) =>
+                {
+                    return self.expected_ref("signed numeric literal", self.peek_token_ref());
+                }
+                Token::Number(..) | Token::Plus | Token::Minus => self.parse_number()?,
+                Token::EOF
+                | Token::SemiColon
+                | Token::Placeholder(_)
+                | Token::Colon
+                | Token::AtSign => {
+                    return self
+                        .expected_ref("primitive schema property literal", self.peek_token_ref());
+                }
+                _ => Expr::Value(self.parse_value()?),
+            };
+            options.push(SqlOption::KeyValue { key, value });
+
+            let space_separated = matches!(
+                self.peek_nth_token_no_skip_ref(0).token,
+                Token::Whitespace(_)
+            );
+            if self.consume_token(&Token::Comma) {
+                continue;
+            }
+            match self.peek_token_ref().token {
+                Token::EOF | Token::SemiColon => break,
+                Token::Word(_) if space_separated => {}
+                _ => {
+                    return self.expected_ref(
+                        "schema property separator or statement end",
+                        self.peek_token_ref(),
+                    )
+                }
+            }
+        }
+        Ok(options)
     }
 
     /// Parse a `CALL procedure_name(arg1, arg2, ...)`

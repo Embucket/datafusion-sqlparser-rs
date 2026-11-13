@@ -3824,6 +3824,16 @@ pub enum AlterSchemaOperation {
         /// The options to set.
         options: Vec<SqlOption>,
     },
+    /// Set primitive schema properties without an `OPTIONS (...)` wrapper (Snowflake).
+    SetOptions {
+        /// Ordered assignments, including duplicates; values are not semantically validated.
+        options: Vec<SqlOption>,
+    },
+    /// Reset schema properties to their defaults (Snowflake).
+    UnsetOptions {
+        /// Ordered property names, including duplicates.
+        options: Vec<Ident>,
+    },
     /// Rename the schema.
     Rename {
         /// The new name for the schema.
@@ -3852,6 +3862,12 @@ impl fmt::Display for AlterSchemaOperation {
             AlterSchemaOperation::DropReplica { replica } => write!(f, "DROP REPLICA {replica}"),
             AlterSchemaOperation::SetOptionsParens { options } => {
                 write!(f, "SET OPTIONS ({})", display_comma_separated(options))
+            }
+            AlterSchemaOperation::SetOptions { options } => {
+                write!(f, "SET {}", display_separated(options, " "))
+            }
+            AlterSchemaOperation::UnsetOptions { options } => {
+                write!(f, "UNSET {}", display_comma_separated(options))
             }
             AlterSchemaOperation::Rename { name } => write!(f, "RENAME TO {name}"),
             AlterSchemaOperation::OwnerTo { owner } => write!(f, "OWNER TO {owner}"),
