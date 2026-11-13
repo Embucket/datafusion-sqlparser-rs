@@ -1501,7 +1501,8 @@ pub trait Dialect: Debug + Any {
         false
     }
 
-    /// Returns true if `CREATE SCHEMA` supports space-separated `COMMENT = <literal>`
+    /// Returns true if `CREATE SCHEMA` supports `OR REPLACE`, `TRANSIENT`,
+    /// `WITH MANAGED ACCESS`, and space-separated `COMMENT = <literal>`
     /// and `DATA_RETENTION_TIME_IN_DAYS = <literal>` suffix options.
     ///
     /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-schema)

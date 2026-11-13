@@ -6760,6 +6760,8 @@ fn snowflake_create_schema_options() {
             "CREATE SCHEMA IF NOT EXISTS db.demo COMMENT = 'description' DATA_RETENTION_TIME_IN_DAYS = 7"
         ),
         Statement::CreateSchema {
+            or_replace: false,
+            transient: false,
             schema_name: SchemaName::Simple(ObjectName::from(vec![
                 Ident::new("db"),
                 Ident::new("demo"),
@@ -6769,6 +6771,7 @@ fn snowflake_create_schema_options() {
             options: None,
             default_collate_spec: None,
             clone: None,
+            with_managed_access: false,
             schema_options: vec![
                 SqlOption::KeyValue {
                     key: Ident::new("COMMENT"),
@@ -6966,12 +6969,6 @@ fn snowflake_create_schema_options_do_not_add_other_schema_modifiers() {
     for sql in [
         "CREATE OR ALTER SCHEMA demo COMMENT = 'x'",
         "CREATE TEMPORARY SCHEMA demo DATA_RETENTION_TIME_IN_DAYS = 1",
-        "CREATE OR REPLACE SCHEMA demo",
-        "CREATE OR REPLACE SCHEMA demo COMMENT = 'x'",
-        "CREATE TRANSIENT SCHEMA demo",
-        "CREATE TRANSIENT SCHEMA demo DATA_RETENTION_TIME_IN_DAYS = 0",
-        "CREATE SCHEMA demo WITH MANAGED ACCESS",
-        "CREATE SCHEMA demo WITH MANAGED ACCESS COMMENT = 'x'",
     ] {
         assert!(snowflake().parse_sql_statements(sql).is_err(), "{sql}");
     }
@@ -6982,14 +6979,13 @@ fn snowflake_create_schema_options_do_not_add_other_schema_modifiers() {
         &DuckDbDialect,
     ] {
         for modifier in [
-            "OR REPLACE",
             "OR ALTER",
             "TEMP",
             "TEMPORARY",
             "LOCAL",
             "GLOBAL",
-            "TRANSIENT",
             "PERSISTENT",
+            "SECURE",
             "LOCAL TEMPORARY",
             "GLOBAL TEMP",
             "OR ALTER TEMPORARY",
@@ -7023,7 +7019,7 @@ fn snowflake_create_schema_options_are_dialect_gated() {
     use sqlparser::parser::Parser;
 
     for dialect in all_dialects().dialects {
-        if dialect.is::<SnowflakeDialect>() {
+        if dialect.is::<SnowflakeDialect>() || dialect.is::<GenericDialect>() {
             assert!(dialect.supports_create_schema_options());
         } else {
             assert!(!dialect.supports_create_schema_options());
@@ -7960,4 +7956,337 @@ fn snowflake_alter_database_options_visitors_do_not_treat_names_as_relations() {
             ControlFlow::Continue(())
         );
     }
+}
+
+#[test]
+fn snowflake_create_schema_modifiers_round_trip_and_ast() {
+    use sqlparser::keywords::Keyword;
+    use sqlparser::parser::Parser;
+
+    for or_replace in [false, true] {
+        for transient in [false, true] {
+            for with_managed_access in [false, true] {
+                for if_not_exists in [false, true] {
+                    for clone in [false, true] {
+                        let sql = format!(
+                            "CREATE {}{}SCHEMA {}db.demo{}{} COMMENT = 'kept' DATA_RETENTION_TIME_IN_DAYS = 0 COMMENT = NULL",
+                            if or_replace { "OR REPLACE " } else { "" },
+                            if transient { "TRANSIENT " } else { "" },
+                            if if_not_exists { "IF NOT EXISTS " } else { "" },
+                            if clone { " CLONE source.demo" } else { "" },
+                            if with_managed_access { " WITH MANAGED ACCESS" } else { "" },
+                        );
+                        let statement = snowflake_and_generic().verified_stmt(&sql);
+                        assert_eq!(
+                            statement,
+                            Statement::CreateSchema {
+                                or_replace,
+                                transient,
+                                schema_name: SchemaName::Simple(ObjectName::from(vec![
+                                    Ident::new("db"),
+                                    Ident::new("demo"),
+                                ])),
+                                if_not_exists,
+                                with: None,
+                                options: None,
+                                default_collate_spec: None,
+                                clone: clone.then(|| ObjectName::from(vec![
+                                    Ident::new("source"),
+                                    Ident::new("demo"),
+                                ])),
+                                with_managed_access,
+                                schema_options: vec![
+                                    SqlOption::KeyValue {
+                                        key: Ident::new("COMMENT"),
+                                        value: Expr::Value(
+                                            Value::SingleQuotedString("kept".into()).into()
+                                        ),
+                                    },
+                                    SqlOption::KeyValue {
+                                        key: Ident::new("DATA_RETENTION_TIME_IN_DAYS"),
+                                        value: Expr::Value(
+                                            Value::Number("0".parse().unwrap(), false).into()
+                                        ),
+                                    },
+                                    SqlOption::KeyValue {
+                                        key: Ident::new("COMMENT"),
+                                        value: Expr::Value(Value::Null.into()),
+                                    },
+                                ],
+                            }
+                        );
+                        assert_eq!(
+                            snowflake_and_generic().verified_stmt(&statement.to_string()),
+                            statement
+                        );
+                        for dialect in [&SnowflakeDialect as &dyn Dialect, &GenericDialect] {
+                            let mut parser = Parser::new(dialect).try_with_sql(&sql).unwrap();
+                            parser.expect_keyword_is(Keyword::CREATE).unwrap();
+                            assert_eq!(
+                                parser.parse_create().unwrap(),
+                                statement,
+                                "{dialect:?}: {sql}"
+                            );
+                            assert_eq!(parser.peek_token_ref().token, Token::EOF);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn snowflake_create_schema_modifiers_tokens_and_quoted_names() {
+    use sqlparser::parser::Parser;
+
+    let sql = r#"CREATE OR REPLACE TRANSIENT SCHEMA IF NOT EXISTS "WITH MANAGED ACCESS" WITH MANAGED ACCESS"#;
+    let expected = vec![
+        Token::make_keyword("CREATE"),
+        Token::make_keyword("OR"),
+        Token::make_keyword("REPLACE"),
+        Token::make_keyword("TRANSIENT"),
+        Token::make_keyword("SCHEMA"),
+        Token::make_keyword("IF"),
+        Token::make_keyword("NOT"),
+        Token::make_keyword("EXISTS"),
+        Token::make_word("WITH MANAGED ACCESS", Some('"')),
+        Token::make_keyword("WITH"),
+        Token::make_keyword("MANAGED"),
+        Token::make_keyword("ACCESS"),
+    ];
+    for dialect in [&SnowflakeDialect as &dyn Dialect, &GenericDialect] {
+        let tokens = Tokenizer::new(dialect, sql).tokenize().unwrap();
+        let tokens: Vec<_> = tokens
+            .into_iter()
+            .filter(|token| !matches!(token, Token::Whitespace(_)))
+            .collect();
+        assert_eq!(tokens, expected);
+        let from_tokens = Parser::new(dialect)
+            .with_tokens(tokens)
+            .parse_statements()
+            .unwrap();
+        assert_eq!(from_tokens, Parser::parse_sql(dialect, sql).unwrap());
+        assert_eq!(from_tokens[0].to_string(), sql);
+        assert_eq!(
+            Parser::parse_sql(dialect, &from_tokens[0].to_string()).unwrap(),
+            from_tokens
+        );
+    }
+
+    for name in [
+        r#""TRANSIENT""#,
+        r#""OR REPLACE""#,
+        r#""WITH MANAGED ACCESS""#,
+    ] {
+        let Statement::CreateSchema {
+            or_replace,
+            transient,
+            with_managed_access,
+            ..
+        } = snowflake_and_generic().verified_stmt(&format!("CREATE SCHEMA {name}"))
+        else {
+            panic!("expected CREATE SCHEMA");
+        };
+        assert!(!or_replace && !transient && !with_managed_access);
+    }
+}
+
+#[test]
+fn snowflake_create_schema_modifiers_comments_and_boundaries() {
+    snowflake_and_generic().one_statement_parses_to(
+        r#"
+        CREATE /* prefix */ OR REPLACE TRANSIENT SCHEMA IF NOT EXISTS "db"."demo"
+        CLONE "source"."demo" WITH /* access */ MANAGED -- access mode
+        ACCESS comment = 'owner''s schema' data_retention_time_in_days = +7;
+        "#,
+        r#"CREATE OR REPLACE TRANSIENT SCHEMA IF NOT EXISTS "db"."demo" CLONE "source"."demo" WITH MANAGED ACCESS comment = 'owner''s schema' data_retention_time_in_days = +7"#,
+    );
+    for sql in [
+        "CREATE OR REPLACE SCHEMA demo; SELECT 1",
+        "CREATE TRANSIENT SCHEMA demo; SELECT 1",
+        "CREATE SCHEMA demo WITH MANAGED ACCESS; SELECT 1",
+        r#"CREATE OR REPLACE TRANSIENT SCHEMA "db;DROP DATABASE prod"."demo" CLONE "source"."demo" WITH MANAGED ACCESS COMMENT = 'x''; DROP SCHEMA prod; -- /* WITH MANAGED ACCESS */' DATA_RETENTION_TIME_IN_DAYS = 0; /* ; */ SELECT 1"#,
+    ] {
+        let statements = snowflake_and_generic().parse_sql_statements(sql).unwrap();
+        assert_eq!(statements.len(), 2, "{sql}");
+        assert_eq!(statements[1].to_string(), "SELECT 1");
+        assert_eq!(
+            snowflake_and_generic().verified_stmt(&statements[0].to_string()),
+            statements[0]
+        );
+    }
+}
+
+#[test]
+fn snowflake_create_schema_modifiers_reject_incomplete_and_trailing_syntax() {
+    use sqlparser::parser::Parser;
+
+    for sql in [
+        "CREATE OR",
+        "CREATE OR REPLACE",
+        "CREATE OR REPLACE TRANSIENT",
+        "CREATE TRANSIENT",
+        "CREATE TRANSIENT SCHEMA",
+        "CREATE OR REPLACE SCHEMA IF NOT EXISTS",
+        "CREATE OR REPLACE OR REPLACE SCHEMA demo",
+        "CREATE TRANSIENT TRANSIENT SCHEMA demo",
+        "CREATE TRANSIENT OR REPLACE SCHEMA demo",
+        "CREATE OR REPLACE OR ALTER TRANSIENT SCHEMA demo",
+        "CREATE SCHEMA demo WITH",
+        "CREATE SCHEMA demo WITH MANAGED",
+        "CREATE SCHEMA demo WITH ACCESS",
+        "CREATE SCHEMA demo MANAGED ACCESS",
+        "CREATE SCHEMA demo WITH MANAGED ACCESS ACCESS",
+        "CREATE SCHEMA demo WITH MANAGED ACCESS WITH MANAGED ACCESS",
+        "CREATE SCHEMA demo WITH MANAGED ACCESS CLONE source.demo",
+        "CREATE SCHEMA demo CLONE",
+        "CREATE SCHEMA demo CLONE source.demo WITH MANAGED",
+        "CREATE SCHEMA demo COMMENT = 'x' WITH MANAGED ACCESS",
+        "CREATE SCHEMA demo DATA_RETENTION_TIME_IN_DAYS = 0 WITH MANAGED ACCESS",
+        "CREATE TRANSIENT SCHEMA demo WITH MANAGED ACCESS COMMENT =",
+        "CREATE TRANSIENT SCHEMA demo WITH MANAGED ACCESS DATA_RETENTION_TIME_IN_DAYS =",
+        "CREATE OR REPLACE TRANSIENT SCHEMA demo WITH MANAGED ACCESS garbage",
+        "CREATE OR REPLACE TRANSIENT SCHEMA demo WITH MANAGED ACCESS SELECT 1",
+        r#"CREATE "TRANSIENT" SCHEMA demo"#,
+        r#"CREATE OR "REPLACE" SCHEMA demo"#,
+        r#"CREATE SCHEMA demo WITH "MANAGED" ACCESS"#,
+        r#"CREATE SCHEMA demo WITH MANAGED "ACCESS""#,
+    ] {
+        // The dialect override and shared parser may report different errors.
+        for dialect in [&SnowflakeDialect as &dyn Dialect, &GenericDialect] {
+            assert!(
+                Parser::parse_sql(dialect, sql).is_err(),
+                "{dialect:?}: {sql}"
+            );
+            assert!(
+                Parser::parse_sql(dialect, &format!("{sql}; SELECT 1")).is_err(),
+                "{dialect:?}: {sql}"
+            );
+        }
+    }
+}
+
+#[test]
+fn snowflake_create_schema_modifiers_keep_other_dialects_and_modifiers_strict() {
+    use sqlparser::keywords::Keyword;
+    use sqlparser::parser::Parser;
+
+    for dialect in all_dialects().dialects {
+        if !dialect.supports_create_schema_options() {
+            for sql in [
+                "CREATE OR REPLACE SCHEMA demo",
+                "CREATE TRANSIENT SCHEMA demo",
+                "CREATE OR REPLACE TRANSIENT SCHEMA demo",
+                "CREATE SCHEMA demo WITH MANAGED ACCESS",
+            ] {
+                assert!(
+                    Parser::parse_sql(&*dialect, sql).is_err(),
+                    "{dialect:?}: {sql}"
+                );
+                let mut parser = Parser::new(&*dialect).try_with_sql(sql).unwrap();
+                parser.expect_keyword_is(Keyword::CREATE).unwrap();
+                assert!(parser.parse_create().is_err(), "{dialect:?}: {sql}");
+            }
+        }
+        for modifier in [
+            "OR ALTER",
+            "TEMP",
+            "TEMPORARY",
+            "PERSISTENT",
+            "SECURE",
+            "GLOBAL",
+            "LOCAL",
+            "GLOBAL TEMP",
+            "LOCAL TEMPORARY",
+            "DYNAMIC",
+            "VOLATILE",
+            "ICEBERG",
+            "OR ALTER TRANSIENT",
+            "TRANSIENT TEMPORARY",
+            "GLOBAL TRANSIENT",
+            "LOCAL TRANSIENT",
+            "ALGORITHM = UNDEFINED",
+            "DEFINER = owner",
+            "SQL SECURITY DEFINER",
+        ] {
+            let sql = format!("CREATE {modifier} SCHEMA demo");
+            assert!(
+                Parser::parse_sql(&*dialect, &sql).is_err(),
+                "{dialect:?}: {sql}"
+            );
+            let mut parser = Parser::new(&*dialect).try_with_sql(&sql).unwrap();
+            parser.expect_keyword_is(Keyword::CREATE).unwrap();
+            assert!(parser.parse_create().is_err(), "{dialect:?}: {sql}");
+        }
+    }
+}
+
+#[test]
+fn snowflake_create_schema_modifiers_preserve_public_schema_parser_and_with_options() {
+    use sqlparser::parser::Parser;
+
+    for body in [
+        "demo",
+        "IF NOT EXISTS demo WITH MANAGED ACCESS COMMENT = 'kept'",
+        "demo CLONE source.demo WITH MANAGED ACCESS DATA_RETENTION_TIME_IN_DAYS = 0",
+        "demo WITH (location = '/tmp/demo')",
+        "demo DEFAULT COLLATE 'und:ci' OPTIONS(location = 'US')",
+        "demo AUTHORIZATION owner",
+    ] {
+        let sql = format!("{body}; SELECT 1");
+        for dialect in [&SnowflakeDialect as &dyn Dialect, &GenericDialect] {
+            let mut parser = Parser::new(dialect).try_with_sql(&sql).unwrap();
+            let statement = parser.parse_create_schema().unwrap();
+            assert_eq!(statement.to_string(), format!("CREATE SCHEMA {body}"));
+            assert!(matches!(
+                statement,
+                Statement::CreateSchema {
+                    or_replace: false,
+                    transient: false,
+                    ..
+                }
+            ));
+            assert_eq!(parser.peek_token_ref().token, Token::SemiColon);
+        }
+        snowflake_and_generic().verified_stmt(&format!("CREATE SCHEMA {body}"));
+    }
+}
+
+#[cfg(all(feature = "serde", feature = "serde_json"))]
+#[test]
+fn snowflake_create_schema_modifiers_serde_round_trip_and_old_ast_defaults() {
+    let statement = snowflake_and_generic().verified_stmt(
+        "CREATE OR REPLACE TRANSIENT SCHEMA db.demo CLONE source.demo WITH MANAGED ACCESS COMMENT = 'kept' DATA_RETENTION_TIME_IN_DAYS = 0",
+    );
+    let encoded = serde_json::to_value(&statement).unwrap();
+    for field in ["or_replace", "transient", "with_managed_access"] {
+        assert_eq!(encoded["CreateSchema"][field], true);
+    }
+    assert_eq!(
+        serde_json::from_value::<Statement>(encoded).unwrap(),
+        statement
+    );
+
+    let plain = snowflake_and_generic().verified_stmt("CREATE SCHEMA demo COMMENT = 'kept'");
+    let mut old = serde_json::to_value(&plain).unwrap();
+    for field in ["or_replace", "transient", "with_managed_access"] {
+        let mut missing_one = serde_json::to_value(&plain).unwrap();
+        assert_eq!(
+            missing_one["CreateSchema"]
+                .as_object_mut()
+                .unwrap()
+                .remove(field),
+            Some(false.into())
+        );
+        assert_eq!(
+            serde_json::from_value::<Statement>(missing_one).unwrap(),
+            plain
+        );
+        assert_eq!(
+            old["CreateSchema"].as_object_mut().unwrap().remove(field),
+            Some(false.into())
+        );
+    }
+    assert_eq!(serde_json::from_value::<Statement>(old).unwrap(), plain);
 }

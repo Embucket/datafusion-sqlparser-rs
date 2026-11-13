@@ -4387,6 +4387,12 @@ pub enum Statement {
     /// CREATE SCHEMA
     /// ```
     CreateSchema {
+        /// `true` when `OR REPLACE` was present (Snowflake).
+        #[cfg_attr(feature = "serde", serde(default))]
+        or_replace: bool,
+        /// `true` when `TRANSIENT` was present (Snowflake).
+        #[cfg_attr(feature = "serde", serde(default))]
+        transient: bool,
         /// `<schema name> | AUTHORIZATION <schema authorization identifier>  | <schema name>  AUTHORIZATION <schema authorization identifier>`
         schema_name: SchemaName,
         /// `true` when `IF NOT EXISTS` was present.
@@ -4423,6 +4429,9 @@ pub enum Statement {
         ///
         /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-clone#databases-schemas)
         clone: Option<ObjectName>,
+        /// `true` when `WITH MANAGED ACCESS` was present (Snowflake).
+        #[cfg_attr(feature = "serde", serde(default))]
+        with_managed_access: bool,
         /// Space-separated Snowflake `COMMENT` and `DATA_RETENTION_TIME_IN_DAYS` assignments.
         /// Stored as [`SqlOption::KeyValue`] entries in source order, retaining duplicates
         /// and literal values for the execution consumer to validate.
@@ -6222,17 +6231,22 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::CreateSchema {
+                or_replace,
+                transient,
                 schema_name,
                 if_not_exists,
                 with,
                 options,
                 default_collate_spec,
                 clone,
+                with_managed_access,
                 schema_options,
             } => {
                 write!(
                     f,
-                    "CREATE SCHEMA {if_not_exists}{name}",
+                    "CREATE {or_replace}{transient}SCHEMA {if_not_exists}{name}",
+                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
+                    transient = if *transient { "TRANSIENT " } else { "" },
                     if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
                     name = schema_name
                 )?;
@@ -6251,6 +6265,9 @@ impl fmt::Display for Statement {
 
                 if let Some(clone) = clone {
                     write!(f, " CLONE {clone}")?;
+                }
+                if *with_managed_access {
+                    write!(f, " WITH MANAGED ACCESS")?;
                 }
                 for option in schema_options {
                     write!(f, " {option}")?;

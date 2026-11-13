@@ -421,6 +421,14 @@ impl Dialect for SnowflakeDialect {
                 if temporary {
                     back += 1
                 }
+                if parser.peek_keyword(Keyword::SCHEMA) {
+                    // The shared schema parser must see every consumed modifier.
+                    back += usize::from(global.is_some())
+                        + usize::from(dynamic)
+                        + usize::from(volatile)
+                        + usize::from(transient)
+                        + usize::from(iceberg);
+                }
                 for _i in 0..back {
                     parser.prev_token();
                 }

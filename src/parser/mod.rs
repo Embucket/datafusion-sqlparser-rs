@@ -5195,6 +5195,22 @@ impl<'a> Parser<'a> {
             } else {
                 self.parse_create_sequence(or_replace, or_alter, temporary)
             }
+        } else if self.peek_keyword(Keyword::SCHEMA) {
+            if or_alter
+                || global.is_some()
+                || temporary
+                || persistent
+                || create_view_params.is_some()
+                || ((or_replace || transient) && !self.dialect.supports_create_schema_options())
+            {
+                self.expected_ref(
+                    "an object type supporting the CREATE modifiers",
+                    self.peek_token_ref(),
+                )
+            } else {
+                self.expect_keyword_is(Keyword::SCHEMA)?;
+                self.parse_create_schema_with_modifiers(or_replace, transient)
+            }
         } else if or_replace {
             self.expected_ref(
                 "[EXTERNAL] TABLE or [MATERIALIZED] VIEW or FUNCTION after CREATE OR REPLACE",
@@ -5208,20 +5224,6 @@ impl<'a> Parser<'a> {
             self.parse_create_index(true).map(Into::into)
         } else if self.parse_keyword(Keyword::VIRTUAL) {
             self.parse_create_virtual_table()
-        } else if self.peek_keyword(Keyword::SCHEMA)
-            && (or_alter
-                || global.is_some()
-                || transient
-                || temporary
-                || persistent
-                || create_view_params.is_some())
-        {
-            self.expected_ref(
-                "an object type supporting the CREATE modifiers",
-                self.peek_token_ref(),
-            )
-        } else if self.parse_keyword(Keyword::SCHEMA) {
-            self.parse_create_schema()
         } else if self.parse_keyword(Keyword::DATABASE) {
             self.parse_create_database()
         } else if self.parse_keyword(Keyword::ROLE) {
@@ -5460,6 +5462,14 @@ impl<'a> Parser<'a> {
 
     /// Parse a `CREATE SCHEMA` statement.
     pub fn parse_create_schema(&mut self) -> Result<Statement, ParserError> {
+        self.parse_create_schema_with_modifiers(false, false)
+    }
+
+    fn parse_create_schema_with_modifiers(
+        &mut self,
+        or_replace: bool,
+        transient: bool,
+    ) -> Result<Statement, ParserError> {
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
 
         let schema_name = self.parse_schema_name()?;
@@ -5470,7 +5480,10 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let with = if self.peek_keyword(Keyword::WITH) {
+        let with = if self.peek_keyword(Keyword::WITH)
+            && !(self.dialect.supports_create_schema_options()
+                && self.peek_keywords(&[Keyword::WITH, Keyword::MANAGED]))
+        {
             Some(self.parse_options(Keyword::WITH)?)
         } else {
             None
@@ -5487,6 +5500,12 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+
+        let with_managed_access = self.dialect.supports_create_schema_options()
+            && self.parse_keywords(&[Keyword::WITH, Keyword::MANAGED]);
+        if with_managed_access {
+            self.expect_keyword_is(Keyword::ACCESS)?;
+        }
 
         let mut schema_options = Vec::new();
         if self.dialect.supports_create_schema_options() {
@@ -5505,12 +5524,15 @@ impl<'a> Parser<'a> {
         }
 
         Ok(Statement::CreateSchema {
+            or_replace,
+            transient,
             schema_name,
             if_not_exists,
             with,
             options,
             default_collate_spec,
             clone,
+            with_managed_access,
             schema_options,
         })
     }
