@@ -529,6 +529,10 @@ impl Dialect for SnowflakeDialect {
         true
     }
 
+    fn supports_describe_object(&self) -> bool {
+        true
+    }
+
     fn allow_extract_custom(&self) -> bool {
         true
     }

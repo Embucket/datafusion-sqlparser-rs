@@ -4761,7 +4761,7 @@ impl<'a> Parser<'a> {
         if self.parse_keyword(expected) {
             Ok(self.get_current_token().clone())
         } else {
-            self.expected_ref(format!("{:?}", &expected).as_str(), self.peek_token_ref())
+            self.expected_ref(format!("{:?}", expected).as_str(), self.peek_token_ref())
         }
     }
 
@@ -4774,7 +4774,7 @@ impl<'a> Parser<'a> {
         if self.parse_keyword(expected) {
             Ok(())
         } else {
-            self.expected_ref(format!("{:?}", &expected).as_str(), self.peek_token_ref())
+            self.expected_ref(format!("{:?}", expected).as_str(), self.peek_token_ref())
         }
     }
 
@@ -13436,7 +13436,7 @@ impl<'a> Parser<'a> {
                 token => {
                     return Err(ParserError::ParserError(format!(
                         "Unexpected token in identifier: {token}"
-                    )))?;
+                    )));
                 }
             }
         }
@@ -14070,6 +14070,11 @@ impl<'a> Parser<'a> {
         &mut self,
         describe_alias: DescribeAlias,
     ) -> Result<Statement, ParserError> {
+        if describe_alias != DescribeAlias::Explain && self.dialect.supports_describe_object() {
+            if let Some(statement) = self.parse_describe_object(describe_alias)? {
+                return Ok(statement);
+            }
+        }
         let mut analyze = false;
         let mut verbose = false;
         let mut query_plan = false;
@@ -14168,6 +14173,29 @@ impl<'a> Parser<'a> {
                 })
             }
         }
+    }
+
+    /// Parse `{ DATABASE | SCHEMA } <name>` following `DESC | DESCRIBE`.
+    /// VIEW retains this fork's existing `ExplainTable::has_view_keyword` representation.
+    /// Returns `None` if none of the object type keywords is present.
+    fn parse_describe_object(
+        &mut self,
+        describe_alias: DescribeAlias,
+    ) -> Result<Option<Statement>, ParserError> {
+        let object_type = match self.parse_one_of_keywords(&[Keyword::DATABASE, Keyword::SCHEMA]) {
+            Some(Keyword::DATABASE) => ObjectType::Database,
+            Some(Keyword::SCHEMA) => ObjectType::Schema,
+            _ => return Ok(None),
+        };
+        let name = self.parse_object_name(false)?;
+        Ok(Some(
+            DescribeObject {
+                describe_alias,
+                object_type,
+                name,
+            }
+            .into(),
+        ))
     }
 
     /// Parse a query expression, i.e. a `SELECT` statement optionally
@@ -16869,7 +16897,7 @@ impl<'a> Parser<'a> {
                         tok.token
                     ),
                     tok.span.start
-                )?;
+                );
             }
         }
 

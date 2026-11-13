@@ -491,6 +491,7 @@ impl Spanned for Statement {
             Statement::DescribeStage { .. } => Span::empty(),
             Statement::DescribeFileFormat { .. } => Span::empty(),
             Statement::DescribeSequence { .. } => Span::empty(),
+            Statement::DescribeObject(..) => Span::empty(),
             Statement::Explain { .. } => Span::empty(),
             Statement::Savepoint { .. } => Span::empty(),
             Statement::ReleaseSavepoint { .. } => Span::empty(),
