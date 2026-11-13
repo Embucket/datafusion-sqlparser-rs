@@ -753,6 +753,10 @@ impl Dialect for SnowflakeDialect {
         true
     }
 
+    fn supports_alter_database_options(&self) -> bool {
+        true
+    }
+
     fn supports_comma_separated_drop_column_list(&self) -> bool {
         true
     }

@@ -17,9 +17,9 @@
 
 use crate::{
     ast::{
-        ddl::AlterSchema, query::SelectItemQualifiedWildcardKind, AlterSchemaOperation, AlterTable,
-        ColumnOptions, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreateView,
-        ExportData, Owner, TypedString,
+        ddl::AlterSchema, query::SelectItemQualifiedWildcardKind, AlterDatabase,
+        AlterDatabaseOperation, AlterSchemaOperation, AlterTable, ColumnOptions, CreateOperator,
+        CreateOperatorClass, CreateOperatorFamily, CreateView, ExportData, Owner, TypedString,
     },
     tokenizer::TokenWithSpan,
 };
@@ -544,6 +544,7 @@ impl Spanned for Statement {
             ),
             Statement::CreateUser(..) => Span::empty(),
             Statement::AlterSchema(s) => s.span(),
+            Statement::AlterDatabase(s) => s.span(),
             Statement::Vacuum(..) => Span::empty(),
             Statement::AlterUser(..) => Span::empty(),
             Statement::Reset(..) => Span::empty(),
@@ -2471,6 +2472,23 @@ impl Spanned for OpenStatement {
     fn span(&self) -> Span {
         let OpenStatement { cursor_name } = self;
         cursor_name.span
+    }
+}
+
+impl Spanned for AlterDatabaseOperation {
+    fn span(&self) -> Span {
+        match self {
+            Self::SetOptions { options } => union_spans(options.iter().map(|i| i.span())),
+            Self::UnsetOptions { options } => union_spans(options.iter().map(|i| i.span)),
+        }
+    }
+}
+
+impl Spanned for AlterDatabase {
+    fn span(&self) -> Span {
+        union_spans(
+            core::iter::once(self.name.span()).chain(self.operations.iter().map(|i| i.span())),
+        )
     }
 }
 
