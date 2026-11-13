@@ -1509,6 +1509,15 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if `ALTER SCHEMA` supports native `SET key = <literal>`
+    /// assignments separated by whitespace or commas, and `UNSET key, ...`.
+    /// This does not enable structured properties such as `TAG` or `CONTACT`.
+    ///
+    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/alter-schema)
+    fn supports_alter_schema_options(&self) -> bool {
+        false
+    }
+
     /// Returns true if the dialect supports the `USING` clause in an `ALTER COLUMN` statement.
     /// Example:
     ///  ```sql
