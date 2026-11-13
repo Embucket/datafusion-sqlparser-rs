@@ -3024,6 +3024,9 @@ pub struct CreateTable {
     /// Snowflake "BASE_LOCATION" clause for Iceberg tables
     /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
     pub base_location: Option<String>,
+    /// Snowflake "ICEBERG_VERSION" clause for Iceberg tables.
+    /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table-snowflake>
+    pub iceberg_version: Option<u64>,
     /// Snowflake "CATALOG" clause for Iceberg tables
     /// <https://docs.snowflake.com/en/sql-reference/sql/create-iceberg-table>
     pub catalog: Option<String>,
@@ -3264,6 +3267,9 @@ impl fmt::Display for CreateTable {
         if self.iceberg {
             if let Some(base_location) = self.base_location.as_ref() {
                 write!(f, " BASE_LOCATION='{base_location}'")?;
+            }
+            if let Some(iceberg_version) = self.iceberg_version {
+                write!(f, " ICEBERG_VERSION={iceberg_version}")?;
             }
         }
 
@@ -3788,6 +3794,63 @@ impl fmt::Display for CreateConnector {
     }
 }
 
+/// A native Snowflake `ALTER DATABASE` property operation.
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum AlterDatabaseOperation {
+    /// Set primitive database properties without an `OPTIONS (...)` wrapper.
+    SetOptions {
+        /// Ordered assignments, including duplicates; values are not semantically validated.
+        options: Vec<SqlOption>,
+    },
+    /// Reset database properties to their defaults.
+    UnsetOptions {
+        /// Ordered property names, including duplicates.
+        options: Vec<Ident>,
+    },
+}
+
+impl fmt::Display for AlterDatabaseOperation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::SetOptions { options } => write!(f, "SET {}", display_separated(options, " ")),
+            Self::UnsetOptions { options } => {
+                write!(f, "UNSET {}", display_comma_separated(options))
+            }
+        }
+    }
+}
+
+/// A Snowflake `ALTER DATABASE` (`Statement::AlterDatabase`) statement.
+///
+/// See [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/alter-database).
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct AlterDatabase {
+    /// The account-level database name, not a table relation.
+    pub name: ObjectName,
+    /// Whether `IF EXISTS` was specified.
+    pub if_exists: bool,
+    /// The property operations to perform on the database.
+    pub operations: Vec<AlterDatabaseOperation>,
+}
+
+impl fmt::Display for AlterDatabase {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ALTER DATABASE ")?;
+        if self.if_exists {
+            write!(f, "IF EXISTS ")?;
+        }
+        write!(f, "{}", self.name)?;
+        for operation in &self.operations {
+            write!(f, " {operation}")?;
+        }
+        Ok(())
+    }
+}
+
 /// An `ALTER SCHEMA` (`Statement::AlterSchema`) operation.
 ///
 /// See [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#alter_schema_collate_statement)
@@ -3818,6 +3881,16 @@ pub enum AlterSchemaOperation {
         /// The options to set.
         options: Vec<SqlOption>,
     },
+    /// Set primitive schema properties without an `OPTIONS (...)` wrapper (Snowflake).
+    SetOptions {
+        /// Ordered assignments, including duplicates; values are not semantically validated.
+        options: Vec<SqlOption>,
+    },
+    /// Reset schema properties to their defaults (Snowflake).
+    UnsetOptions {
+        /// Ordered property names, including duplicates.
+        options: Vec<Ident>,
+    },
     /// Rename the schema.
     Rename {
         /// The new name for the schema.
@@ -3846,6 +3919,12 @@ impl fmt::Display for AlterSchemaOperation {
             AlterSchemaOperation::DropReplica { replica } => write!(f, "DROP REPLICA {replica}"),
             AlterSchemaOperation::SetOptionsParens { options } => {
                 write!(f, "SET OPTIONS ({})", display_comma_separated(options))
+            }
+            AlterSchemaOperation::SetOptions { options } => {
+                write!(f, "SET {}", display_separated(options, " "))
+            }
+            AlterSchemaOperation::UnsetOptions { options } => {
+                write!(f, "UNSET {}", display_comma_separated(options))
             }
             AlterSchemaOperation::Rename { name } => write!(f, "RENAME TO {name}"),
             AlterSchemaOperation::OwnerTo { owner } => write!(f, "OWNER TO {owner}"),
@@ -4698,7 +4777,7 @@ impl fmt::Display for AlterTable {
         if self.only {
             write!(f, "ONLY ")?;
         }
-        write!(f, "{} ", &self.name)?;
+        write!(f, "{} ", self.name)?;
         if let Some(cluster) = &self.on_cluster {
             write!(f, "ON CLUSTER {cluster} ")?;
         }

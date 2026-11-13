@@ -17,9 +17,9 @@
 
 use crate::{
     ast::{
-        ddl::AlterSchema, query::SelectItemQualifiedWildcardKind, AlterSchemaOperation, AlterTable,
-        ColumnOptions, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreateView,
-        ExportData, Owner, TypedString,
+        ddl::AlterSchema, query::SelectItemQualifiedWildcardKind, AlterDatabase,
+        AlterDatabaseOperation, AlterSchemaOperation, AlterTable, ColumnOptions, CreateOperator,
+        CreateOperatorClass, CreateOperatorFamily, CreateView, ExportData, Owner, TypedString,
     },
     tokenizer::TokenWithSpan,
 };
@@ -328,6 +328,12 @@ impl Spanned for Values {
 impl Spanned for Statement {
     fn span(&self) -> Span {
         match self {
+            // These account-level commands do not yet retain complete statement spans.
+            Statement::CreateWarehouse(_)
+            | Statement::AlterWarehouse(_)
+            | Statement::ShowWarehouses(_)
+            | Statement::DescribeWarehouse(_)
+            | Statement::DropWarehouse(_) => Span::empty(),
             Statement::Analyze(analyze) => analyze.span(),
             Statement::Truncate(truncate) => truncate.span(),
             Statement::Msck(msck) => msck.span(),
@@ -485,6 +491,7 @@ impl Spanned for Statement {
             Statement::DescribeStage { .. } => Span::empty(),
             Statement::DescribeFileFormat { .. } => Span::empty(),
             Statement::DescribeSequence { .. } => Span::empty(),
+            Statement::DescribeObject(..) => Span::empty(),
             Statement::Explain { .. } => Span::empty(),
             Statement::Savepoint { .. } => Span::empty(),
             Statement::ReleaseSavepoint { .. } => Span::empty(),
@@ -520,7 +527,10 @@ impl Spanned for Statement {
             Statement::Print { .. } => Span::empty(),
             Statement::WaitFor(_) => Span::empty(),
             Statement::Return { .. } => Span::empty(),
-            Statement::List(..) | Statement::Remove(..) => Span::empty(),
+            Statement::List(..)
+            | Statement::Remove(..)
+            | Statement::Put(..)
+            | Statement::Get(..) => Span::empty(),
             Statement::ExportData(ExportData {
                 options,
                 query,
@@ -534,6 +544,7 @@ impl Spanned for Statement {
             ),
             Statement::CreateUser(..) => Span::empty(),
             Statement::AlterSchema(s) => s.span(),
+            Statement::AlterDatabase(s) => s.span(),
             Statement::Vacuum(..) => Span::empty(),
             Statement::AlterUser(..) => Span::empty(),
             Statement::Reset(..) => Span::empty(),
@@ -609,6 +620,7 @@ impl Spanned for CreateTable {
             with_tags: _,                       // todo, Snowflake specific
             external_volume: _,                 // todo, Snowflake specific
             base_location: _,                   // todo, Snowflake specific
+            iceberg_version: _,                 // u64, no span
             catalog: _,                         // todo, Snowflake specific
             catalog_sync: _,                    // todo, Snowflake specific
             storage_serialization_policy: _,
@@ -2463,6 +2475,23 @@ impl Spanned for OpenStatement {
     }
 }
 
+impl Spanned for AlterDatabaseOperation {
+    fn span(&self) -> Span {
+        match self {
+            Self::SetOptions { options } => union_spans(options.iter().map(|i| i.span())),
+            Self::UnsetOptions { options } => union_spans(options.iter().map(|i| i.span)),
+        }
+    }
+}
+
+impl Spanned for AlterDatabase {
+    fn span(&self) -> Span {
+        union_spans(
+            core::iter::once(self.name.span()).chain(self.operations.iter().map(|i| i.span())),
+        )
+    }
+}
+
 impl Spanned for AlterSchemaOperation {
     fn span(&self) -> Span {
         match self {
@@ -2472,8 +2501,12 @@ impl Spanned for AlterSchemaOperation {
                     .chain(options.iter().flat_map(|i| i.iter().map(|i| i.span()))),
             ),
             AlterSchemaOperation::DropReplica { replica } => replica.span,
-            AlterSchemaOperation::SetOptionsParens { options } => {
+            AlterSchemaOperation::SetOptionsParens { options }
+            | AlterSchemaOperation::SetOptions { options } => {
                 union_spans(options.iter().map(|i| i.span()))
+            }
+            AlterSchemaOperation::UnsetOptions { options } => {
+                union_spans(options.iter().map(|i| i.span))
             }
             AlterSchemaOperation::Rename { name } => name.span(),
             AlterSchemaOperation::OwnerTo { owner } => {

@@ -24,25 +24,31 @@ use crate::ast::helpers::key_value_options::{
 use crate::ast::helpers::stmt_create_database::CreateDatabaseBuilder;
 use crate::ast::helpers::stmt_create_table::CreateTableBuilder;
 use crate::ast::helpers::stmt_data_loading::{
-    AlterFileFormatOperation, AlterStageOperation, FileStagingCommand, StageLoadSelectItem,
+    file_transfer_location_needs_quotes, file_transfer_number_matches, AlterFileFormatOperation,
+    AlterStageOperation, FileStagingCommand, FileTransferLocation, FileTransferOption,
+    FileTransferStage, FileTransferStageLocation, Get, Put, StageLoadSelectItem,
     StageLoadSelectItemKind, StageParamsObject,
+};
+use crate::ast::helpers::stmt_warehouse::{
+    AlterWarehouse, AlterWarehouseAction, CreateWarehouse, DescribeWarehouse, DropWarehouse,
+    ShowWarehouses, WarehouseOption,
 };
 use crate::ast::{
     AlterTable, AlterTableOperation, AlterTableType, CatalogSyncNamespaceMode, CloudProviderParams,
-    ColumnOption, ColumnPolicy, ColumnPolicyProperty, ContactEntry, CopyIntoSnowflakeKind,
-    CreateTable, CreateTableLikeKind, DollarQuotedString, Expr, Ident, IdentityParameters,
-    IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
-    InitializeKind, Insert, MultiTableInsertIntoClause, MultiTableInsertType,
-    MultiTableInsertValue, MultiTableInsertValues, MultiTableInsertWhenClause, ObjectName,
-    ObjectNamePart, RefreshModeKind, RowAccessPolicy, ShowObjects, SqlOption, Statement,
-    StorageLifecyclePolicy, StorageSerializationPolicy, TableObject, TagsColumnOption, Value,
-    WrappedCollection,
+    ColumnOption, ColumnPolicy, ColumnPolicyProperty, CommentDef, ContactEntry,
+    CopyIntoSnowflakeKind, CreateTable, CreateTableLikeKind, DescribeAlias, DollarQuotedString,
+    Expr, Ident, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
+    IdentityPropertyKind, IdentityPropertyOrder, InitializeKind, Insert,
+    MultiTableInsertIntoClause, MultiTableInsertType, MultiTableInsertValue,
+    MultiTableInsertValues, MultiTableInsertWhenClause, ObjectName, ObjectNamePart,
+    RefreshModeKind, RowAccessPolicy, ShowObjects, SqlOption, Statement, StorageLifecyclePolicy,
+    StorageSerializationPolicy, TableObject, TagsColumnOption, Value, WrappedCollection,
 };
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
 use crate::parser::{IsOptional, Parser, ParserError};
 use crate::tokenizer::TokenWithSpan;
-use crate::tokenizer::{Span, Token};
+use crate::tokenizer::{Span, Token, Tokenizer};
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
 #[cfg(not(feature = "std"))]
@@ -272,6 +278,27 @@ impl Dialect for SnowflakeDialect {
     }
 
     fn parse_statement(&self, parser: &mut Parser) -> Option<Result<Statement, ParserError>> {
+        if let Some(command) = parser.parse_one_of_keywords(&[Keyword::PUT, Keyword::GET]) {
+            return Some(parse_file_transfer_command(command, parser));
+        }
+
+        if let Some(alias) = parser.parse_one_of_keywords(&[Keyword::DESC, Keyword::DESCRIBE]) {
+            if parser.parse_keyword(Keyword::WAREHOUSE) {
+                let describe_alias = if alias == Keyword::DESC {
+                    DescribeAlias::Desc
+                } else {
+                    DescribeAlias::Describe
+                };
+                return Some(parser.parse_object_name(false).map(|name| {
+                    Statement::DescribeWarehouse(DescribeWarehouse {
+                        describe_alias,
+                        name,
+                    })
+                }));
+            }
+            parser.prev_token();
+        }
+
         if parser.parse_keyword(Keyword::BEGIN) {
             // Snowflake supports both `BEGIN TRANSACTION` and `BEGIN ... END` blocks.
             // If the next keyword indicates a transaction statement, let the
@@ -315,6 +342,14 @@ impl Dialect for SnowflakeDialect {
             return Some(parse_alter_file_format(parser));
         }
 
+        if parser.parse_keywords(&[Keyword::ALTER, Keyword::WAREHOUSE]) {
+            return Some(parse_alter_warehouse(parser));
+        }
+
+        if parser.parse_keywords(&[Keyword::DROP, Keyword::WAREHOUSE]) {
+            return Some(parse_drop_warehouse(parser));
+        }
+
         if parser.parse_keyword(Keyword::CREATE) {
             // possibly CREATE STAGE
             //[ OR  REPLACE ]
@@ -347,7 +382,16 @@ impl Dialect for SnowflakeDialect {
                 _ => {}
             }
 
-            if parser.parse_keyword(Keyword::STAGE) {
+            if global.is_none()
+                && !dynamic
+                && !temporary
+                && !volatile
+                && !transient
+                && !iceberg
+                && parser.parse_keyword(Keyword::WAREHOUSE)
+            {
+                return Some(parse_create_warehouse(or_replace, parser));
+            } else if parser.parse_keyword(Keyword::STAGE) {
                 // OK - this is CREATE STAGE statement
                 return Some(parse_create_stage(or_replace, temporary, parser));
             } else if parser.parse_keywords(&[Keyword::FILE, Keyword::FORMAT]) {
@@ -377,6 +421,14 @@ impl Dialect for SnowflakeDialect {
                 if temporary {
                     back += 1
                 }
+                if parser.peek_keyword(Keyword::SCHEMA) {
+                    // The shared schema parser must see every consumed modifier.
+                    back += usize::from(global.is_some())
+                        + usize::from(dynamic)
+                        + usize::from(volatile)
+                        + usize::from(transient)
+                        + usize::from(iceberg);
+                }
                 for _i in 0..back {
                     parser.prev_token();
                 }
@@ -400,6 +452,9 @@ impl Dialect for SnowflakeDialect {
             let terse = parser.parse_keyword(Keyword::TERSE);
             if parser.parse_keyword(Keyword::OBJECTS) {
                 return Some(parse_show_objects(terse, parser));
+            }
+            if parser.parse_keyword(Keyword::WAREHOUSES) {
+                return Some(parse_show_warehouses(terse, parser));
             }
             //Give back Keyword::TERSE
             if terse {
@@ -482,6 +537,10 @@ impl Dialect for SnowflakeDialect {
         true
     }
 
+    fn supports_describe_object(&self) -> bool {
+        true
+    }
+
     fn allow_extract_custom(&self) -> bool {
         true
     }
@@ -505,6 +564,10 @@ impl Dialect for SnowflakeDialect {
     }
 
     fn supports_file_format_commands(&self) -> bool {
+        true
+    }
+
+    fn supports_file_transfer_commands(&self) -> bool {
         true
     }
 
@@ -690,6 +753,18 @@ impl Dialect for SnowflakeDialect {
         true
     }
 
+    fn supports_create_schema_options(&self) -> bool {
+        true
+    }
+
+    fn supports_alter_schema_options(&self) -> bool {
+        true
+    }
+
+    fn supports_alter_database_options(&self) -> bool {
+        true
+    }
+
     fn supports_comma_separated_drop_column_list(&self) -> bool {
         true
     }
@@ -774,6 +849,182 @@ fn parse_file_staging_command(kw: Keyword, parser: &mut Parser) -> Result<Statem
             "unexpected stage command, expecting LIST, LS, REMOVE or RM".to_string(),
         )),
     }
+}
+
+fn parse_file_transfer_command(
+    command: Keyword,
+    parser: &mut Parser,
+) -> Result<Statement, ParserError> {
+    let source = parse_file_transfer_location(parser, command == Keyword::GET)?;
+    let target = parse_file_transfer_location(parser, command == Keyword::PUT)?;
+    let mut options = Vec::new();
+    while !matches!(parser.peek_token_ref().token, Token::EOF | Token::SemiColon) {
+        let name = parser.parse_identifier()?;
+        parser.expect_token(&Token::Eq)?;
+        let number_spelling = match parser.peek_token().token {
+            Token::Number(number, false) => Some(number),
+            sign @ (Token::Plus | Token::Minus) => match parser.peek_nth_token(1).token {
+                Token::Number(number, false) => Some(format!("{sign}{number}")),
+                _ => None,
+            },
+            _ => None,
+        };
+        // Keep typed primitives, identifiers, signed numbers, and actual bindings.
+        // Owning execution must validate option names/value shapes without evaluating them.
+        let value = parser.parse_expr()?;
+        let number_spelling = number_spelling
+            .filter(|raw| raw != &value.to_string() && file_transfer_number_matches(&value, raw));
+        options.push(FileTransferOption {
+            name,
+            value,
+            number_spelling,
+        });
+    }
+    if command == Keyword::PUT {
+        Ok(Statement::Put(Put {
+            source,
+            target,
+            options,
+        }))
+    } else {
+        Ok(Statement::Get(Get {
+            source,
+            target,
+            options,
+        }))
+    }
+}
+
+fn parse_file_transfer_location(
+    parser: &mut Parser,
+    stage: bool,
+) -> Result<FileTransferLocation, ParserError> {
+    let token = parser.next_token();
+    let (value, quoted) = match token.token {
+        Token::FileTransferLocation { value, quoted } => (value, quoted),
+        Token::Placeholder(value) => {
+            return Ok(FileTransferLocation::Binding(Expr::Value(
+                Value::Placeholder(value).with_span(token.span),
+            )));
+        }
+        _ => return parser.expected("file transfer location", token),
+    };
+    let numeric_binding = value
+        .strip_prefix(':')
+        .is_some_and(|number| !number.is_empty() && number.chars().all(|ch| ch.is_ascii_digit()));
+    if !quoted && (value == "?" || numeric_binding) {
+        return Ok(FileTransferLocation::Binding(Expr::Value(
+            Value::Placeholder(value).with_span(token.span),
+        )));
+    }
+    if stage && value.starts_with('@') {
+        let mut location = parse_file_transfer_stage_location(&value)?;
+        location.quoted = quoted;
+        return Ok(FileTransferLocation::Stage(location));
+    }
+    if !stage && value.starts_with("file://") {
+        return Ok(FileTransferLocation::Local { uri: value, quoted });
+    }
+    Err(ParserError::ParserError(if stage {
+        "Expected a stage reference or binding in transfer operand".into()
+    } else {
+        "Expected a file:// URI or binding in transfer operand".into()
+    }))
+}
+
+/// Parse an exact bound stage operand into a typed name and separate payload prefix.
+///
+/// This parses identifiers rather than manufacturing a `PUT`/`GET` SQL statement.
+/// User/table forms remain distinct; parsing does not imply local execution support.
+pub fn parse_file_transfer_stage_location(
+    value: &str,
+) -> Result<FileTransferStageLocation, ParserError> {
+    let Some(stage) = value.strip_prefix('@') else {
+        return Err(ParserError::ParserError(
+            "Expected an @stage reference".into(),
+        ));
+    };
+    let mut identifier_quote = false;
+    let mut slash = None;
+    let mut chars = stage.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        if ch == '"' {
+            if identifier_quote && chars.peek().is_some_and(|(_, ch)| *ch == '"') {
+                chars.next();
+            } else {
+                identifier_quote = !identifier_quote;
+            }
+        } else if ch == '/' && !identifier_quote {
+            slash = Some(index);
+            break;
+        }
+    }
+    if identifier_quote {
+        return Err(ParserError::ParserError(
+            "Unterminated stage identifier".into(),
+        ));
+    }
+    let (name, prefix) = match slash {
+        Some(index) => (&stage[..index], Some(String::from(&stage[index + 1..]))),
+        None => (stage, None),
+    };
+    let kind = if name == "~" {
+        FileTransferStage::User
+    } else {
+        let dialect = SnowflakeDialect;
+        let mut tokens = Tokenizer::new(&dialect, name)
+            .with_file_transfer_locations(false)
+            .tokenize_with_location()?;
+        // A comment cannot silently truncate a bound identifier. Whitespace inside
+        // a quoted identifier is part of its Word token and is preserved normally.
+        if tokens
+            .iter()
+            .any(|token| matches!(token.token, Token::Whitespace(_)))
+        {
+            return Err(ParserError::ParserError(
+                "Unexpected whitespace or comment in stage name".into(),
+            ));
+        }
+        let markers = tokens
+            .iter()
+            .filter(|token| token.token == Token::Mod)
+            .count();
+        let table = markers == 1;
+        if markers > 1
+            || (table && (tokens.len() < 2 || tokens[tokens.len() - 2].token != Token::Mod))
+        {
+            return Err(ParserError::ParserError(
+                "Expected % immediately before the final table stage identifier".into(),
+            ));
+        }
+        if table {
+            tokens.remove(tokens.len() - 2);
+        }
+        let mut parser = Parser::new(&dialect).with_tokens_with_locations(tokens);
+        let name = parser.parse_object_name(false)?;
+        if name
+            .0
+            .iter()
+            .any(|part| !matches!(part, ObjectNamePart::Identifier(_)))
+        {
+            return Err(ParserError::ParserError(
+                "Expected identifier components in transfer stage name".into(),
+            ));
+        }
+        if !matches!(parser.peek_token_ref().token, Token::EOF) {
+            return parser.expected_ref("end of stage name", parser.peek_token_ref());
+        }
+        if table {
+            FileTransferStage::Table(name)
+        } else {
+            FileTransferStage::Named(name)
+        }
+    };
+    Ok(FileTransferStageLocation {
+        kind,
+        prefix,
+        quoted: file_transfer_location_needs_quotes(value),
+    })
 }
 
 /// Parse snowflake alter dynamic table.
@@ -914,11 +1165,18 @@ pub fn parse_create_table(
                     builder = builder.copy_grants(true);
                 }
                 Keyword::COMMENT => {
-                    // Rewind the COMMENT keyword
-                    parser.prev_token();
-                    if let Some(comment_def) = parser.parse_optional_inline_comment()? {
-                        plain_options.push(SqlOption::Comment(comment_def))
-                    }
+                    let has_eq = parser.consume_token(&Token::Eq);
+                    let comment_def = if has_eq && parser.parse_keyword(Keyword::NULL) {
+                        CommentDef::NullWithEq
+                    } else {
+                        let comment = parser.parse_comment_value()?;
+                        if has_eq {
+                            CommentDef::WithEq(comment)
+                        } else {
+                            CommentDef::WithoutEq(comment)
+                        }
+                    };
+                    plain_options.push(SqlOption::Comment(comment_def));
                 }
                 Keyword::AS => {
                     let query = parser.parse_query()?;
@@ -1046,6 +1304,10 @@ pub fn parse_create_table(
                     parser.expect_token(&Token::Eq)?;
                     builder.base_location = Some(parser.parse_literal_string()?);
                 }
+                Keyword::ICEBERG_VERSION if iceberg => {
+                    parser.expect_token(&Token::Eq)?;
+                    builder.iceberg_version = Some(parser.parse_literal_uint()?);
+                }
                 Keyword::CATALOG_SYNC => {
                     parser.expect_token(&Token::Eq)?;
                     builder.catalog_sync = Some(parser.parse_literal_string()?);
@@ -1130,12 +1392,6 @@ pub fn parse_create_table(
     };
 
     builder = builder.table_options(table_options);
-
-    if iceberg && builder.base_location.is_none() {
-        return Err(ParserError::ParserError(
-            "BASE_LOCATION is required for ICEBERG tables".to_string(),
-        ));
-    }
 
     Ok(builder.build())
 }
@@ -1242,7 +1498,11 @@ pub fn parse_create_database(
                 }
                 _ => return parser.expected("end of statement", next_token),
             },
-            Token::SemiColon | Token::EOF => break,
+            Token::SemiColon => {
+                parser.prev_token();
+                break;
+            }
+            Token::EOF => break,
             _ => return parser.expected("end of statement", next_token),
         }
     }
@@ -1775,19 +2035,22 @@ fn parse_select_item_for_data_load(
 ) -> Result<StageLoadSelectItem, ParserError> {
     let mut alias: Option<Ident> = None;
     let mut file_col_num: i32 = 0;
+    let mut file_col_num_raw: Option<String> = None;
     let mut element: Option<Ident> = None;
     let mut item_as: Option<Ident> = None;
 
     let next_token = parser.next_token();
     match next_token.token {
         Token::Placeholder(w) => {
-            file_col_num = w.to_string().split_off(1).parse::<i32>().map_err(|e| {
-                ParserError::ParserError(format!("Could not parse '{w}' as i32: {e}"))
-            })?;
+            (file_col_num, file_col_num_raw) = parse_stage_load_column_number(&w)?;
             Ok(())
         }
         Token::Word(w) => {
-            alias = Some(Ident::new(w.value));
+            alias = Some(Ident {
+                value: w.value,
+                quote_style: w.quote_style,
+                span: next_token.span,
+            });
             Ok(())
         }
         _ => parser.expected("alias or file_col_num", next_token),
@@ -1799,9 +2062,7 @@ fn parse_select_item_for_data_load(
         let col_num_token = parser.next_token();
         match col_num_token.token {
             Token::Placeholder(w) => {
-                file_col_num = w.to_string().split_off(1).parse::<i32>().map_err(|e| {
-                    ParserError::ParserError(format!("Could not parse '{w}' as i32: {e}"))
-                })?;
+                (file_col_num, file_col_num_raw) = parse_stage_load_column_number(&w)?;
                 Ok(())
             }
             _ => parser.expected("file_col_num", col_num_token),
@@ -1812,10 +2073,17 @@ fn parse_select_item_for_data_load(
     match parser.next_token().token {
         Token::Colon => {
             // parse element
-            element = Some(Ident::new(match parser.next_token().token {
-                Token::Word(w) => Ok(w.value),
-                _ => parser.expected_ref("file_col_num", parser.peek_token_ref()),
-            }?));
+            element = Some(match parser.next_token() {
+                TokenWithSpan {
+                    token: Token::Word(w),
+                    span,
+                } => Ident {
+                    value: w.value,
+                    quote_style: w.quote_style,
+                    span,
+                },
+                token => return parser.expected("file_col_num", token),
+            });
         }
         _ => {
             // element not present move back
@@ -1837,18 +2105,35 @@ fn parse_select_item_for_data_load(
 
     // as
     if parser.parse_keyword(Keyword::AS) {
-        item_as = Some(match parser.next_token().token {
-            Token::Word(w) => Ok(Ident::new(w.value)),
-            _ => parser.expected_ref("column item alias", parser.peek_token_ref()),
-        }?);
+        item_as = Some(match parser.next_token() {
+            TokenWithSpan {
+                token: Token::Word(w),
+                span,
+            } => Ident {
+                value: w.value,
+                quote_style: w.quote_style,
+                span,
+            },
+            token => return parser.expected("column item alias", token),
+        });
     }
 
     Ok(StageLoadSelectItem {
         alias,
         file_col_num,
+        file_col_num_raw,
         element,
         item_as,
     })
+}
+
+fn parse_stage_load_column_number(placeholder: &str) -> Result<(i32, Option<String>), ParserError> {
+    let digits = placeholder.strip_prefix('$').unwrap_or(placeholder);
+    let number = digits.parse::<i32>().map_err(|error| {
+        ParserError::ParserError(format!("Could not parse '{placeholder}' as i32: {error}"))
+    })?;
+    let raw = (placeholder != format!("${number}")).then(|| String::from(placeholder));
+    Ok((number, raw))
 }
 
 fn parse_stage_params(parser: &mut Parser) -> Result<StageParamsObject, ParserError> {
@@ -1884,6 +2169,12 @@ fn parse_stage_params(parser: &mut Parser) -> Result<StageParamsObject, ParserEr
             Token::SingleQuotedString(word) => Ok(word),
             _ => parser.expected_ref("an endpoint statement", parser.peek_token_ref()),
         }?)
+    }
+
+    // STORAGE_INTEGRATION may follow ENDPOINT, but a duplicate stays unconsumed.
+    if storage_integration.is_none() && parser.parse_keyword(Keyword::STORAGE_INTEGRATION) {
+        parser.expect_token(&Token::Eq)?;
+        storage_integration = Some(parser.next_token().token.to_string());
     }
 
     // CREDENTIALS
@@ -2264,4 +2555,134 @@ fn parse_multi_table_insert_when_clauses(
     }
 
     Ok((when_clauses, else_clause))
+}
+
+fn parse_create_warehouse(or_replace: bool, parser: &mut Parser) -> Result<Statement, ParserError> {
+    let if_not_exists = parser.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
+    let name = parser.parse_object_name(false)?;
+    let with_keyword = parser.parse_keyword(Keyword::WITH);
+    let options = parse_warehouse_options(parser, with_keyword)?;
+    Ok(Statement::CreateWarehouse(CreateWarehouse {
+        or_replace,
+        if_not_exists,
+        name,
+        with_keyword,
+        options,
+    }))
+}
+
+fn parse_warehouse_number(parser: &mut Parser) -> Result<Expr, ParserError> {
+    let numeric = matches!(parser.peek_token_ref().token, Token::Number(..))
+        || (matches!(parser.peek_token_ref().token, Token::Plus | Token::Minus)
+            && matches!(parser.peek_nth_token(1).token, Token::Number(..)));
+    if !numeric {
+        return parser.expected_ref("numeric warehouse literal", parser.peek_token_ref());
+    }
+    parser.parse_number()
+}
+
+fn parse_warehouse_option_value(parser: &mut Parser) -> Result<Expr, ParserError> {
+    match parser.peek_token().token {
+        Token::Number(..) | Token::Plus | Token::Minus => parse_warehouse_number(parser),
+        Token::SingleQuotedString(_) | Token::DollarQuotedString(_) => {
+            parser.parse_value().map(Expr::Value)
+        }
+        Token::Word(word)
+            if matches!(word.keyword, Keyword::TRUE | Keyword::FALSE | Keyword::NULL) =>
+        {
+            parser.parse_value().map(Expr::Value)
+        }
+        Token::Word(_) => parser.parse_identifier().map(Expr::Identifier),
+        _ => parser.expected_ref("primitive warehouse option value", parser.peek_token_ref()),
+    }
+}
+
+fn parse_warehouse_options(
+    parser: &mut Parser,
+    required: bool,
+) -> Result<Vec<WarehouseOption>, ParserError> {
+    let mut options = Vec::new();
+    loop {
+        match parser.peek_token_ref().token {
+            Token::EOF | Token::SemiColon => break,
+            Token::Word(_) => {
+                let name = parser.parse_identifier()?;
+                parser.expect_token(&Token::Eq)?;
+                let value = parse_warehouse_option_value(parser)?;
+                options.push(WarehouseOption { name, value });
+            }
+            _ => {
+                return parser
+                    .expected_ref("warehouse option or statement end", parser.peek_token_ref());
+            }
+        }
+    }
+    if required && options.is_empty() {
+        return parser.expected_ref("at least one warehouse option", parser.peek_token_ref());
+    }
+    Ok(options)
+}
+
+fn parse_alter_warehouse(parser: &mut Parser) -> Result<Statement, ParserError> {
+    let if_exists = parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+    let name = if parser
+        .peek_one_of_keywords(&[Keyword::SUSPEND, Keyword::RESUME])
+        .is_some()
+    {
+        None
+    } else {
+        Some(parser.parse_object_name(false)?)
+    };
+    let action = if parser.parse_keyword(Keyword::SUSPEND) {
+        AlterWarehouseAction::Suspend
+    } else if parser.parse_keyword(Keyword::RESUME) {
+        let if_suspended = parser.parse_keywords(&[Keyword::IF, Keyword::SUSPENDED]);
+        AlterWarehouseAction::Resume { if_suspended }
+    } else if name.is_some() && parser.parse_keyword(Keyword::SET) {
+        AlterWarehouseAction::Set(parse_warehouse_options(parser, true)?)
+    } else if name.is_some() && parser.parse_keyword(Keyword::UNSET) {
+        AlterWarehouseAction::Unset(parser.parse_comma_separated(|p| p.parse_identifier())?)
+    } else if name.is_some() && parser.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+        AlterWarehouseAction::RenameTo(parser.parse_object_name(false)?)
+    } else {
+        return parser.expected_ref(
+            "warehouse SUSPEND, RESUME, SET, UNSET or RENAME TO",
+            parser.peek_token_ref(),
+        );
+    };
+    Ok(Statement::AlterWarehouse(AlterWarehouse {
+        if_exists,
+        name,
+        action,
+    }))
+}
+
+fn parse_drop_warehouse(parser: &mut Parser) -> Result<Statement, ParserError> {
+    let if_exists = parser.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+    let name = parser.parse_object_name(false)?;
+    Ok(Statement::DropWarehouse(DropWarehouse { if_exists, name }))
+}
+
+fn parse_show_warehouses(terse: bool, parser: &mut Parser) -> Result<Statement, ParserError> {
+    let like_pattern = if parser.parse_keyword(Keyword::LIKE) {
+        Some(parser.parse_literal_string()?)
+    } else {
+        None
+    };
+    let starts_with = if parser.parse_keywords(&[Keyword::STARTS, Keyword::WITH]) {
+        Some(parser.parse_literal_string()?)
+    } else {
+        None
+    };
+    let limit = if parser.parse_keyword(Keyword::LIMIT) {
+        Some(parse_warehouse_number(parser)?)
+    } else {
+        None
+    };
+    Ok(Statement::ShowWarehouses(ShowWarehouses {
+        terse,
+        like_pattern,
+        starts_with,
+        limit,
+    }))
 }

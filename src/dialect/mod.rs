@@ -51,8 +51,8 @@ pub use self::mysql::MySqlDialect;
 pub use self::oracle::OracleDialect;
 pub use self::postgresql::PostgreSqlDialect;
 pub use self::redshift::RedshiftSqlDialect;
-pub use self::snowflake::parse_snowflake_stage_name;
 pub use self::snowflake::SnowflakeDialect;
+pub use self::snowflake::{parse_file_transfer_stage_location, parse_snowflake_stage_name};
 pub use self::spark::SparkSqlDialect;
 pub use self::sqlite::SQLiteDialect;
 pub use self::teradata::TeradataDialect;
@@ -1019,6 +1019,15 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if this dialect supports `DESC | DESCRIBE <object_type> <name>`
+    /// for namespace object types: `DESCRIBE DATABASE my_db` or `DESCRIBE SCHEMA my_schema`.
+    /// Existing `DESCRIBE VIEW` support keeps its `ExplainTable` representation.
+    ///
+    /// See <https://docs.snowflake.com/en/sql-reference/sql/desc>
+    fn supports_describe_object(&self) -> bool {
+        false
+    }
+
     /// Returns true if this dialect allows the `EXTRACT` function to words other than [`Keyword`].
     fn allow_extract_custom(&self) -> bool {
         false
@@ -1273,6 +1282,14 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Supports `PUT`/`GET` with two opaque transfer operands at statement start.
+    ///
+    /// URI comment markers, globs, and stage prefixes are payload bytes only in those
+    /// operands. Normal SQL identifiers and comments retain their ordinary tokenization.
+    fn supports_file_transfer_commands(&self) -> bool {
+        false
+    }
+
     /// Returns true if this dialect supports the `COMMENT` statement
     fn supports_comment_on(&self) -> bool {
         false
@@ -1481,6 +1498,33 @@ pub trait Dialect: Debug + Any {
     /// );
     /// ```
     fn supports_space_separated_column_options(&self) -> bool {
+        false
+    }
+
+    /// Returns true if `CREATE SCHEMA` supports `OR REPLACE`, `TRANSIENT`,
+    /// `WITH MANAGED ACCESS`, and space-separated `COMMENT = <literal>`
+    /// and `DATA_RETENTION_TIME_IN_DAYS = <literal>` suffix options.
+    ///
+    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-schema)
+    fn supports_create_schema_options(&self) -> bool {
+        false
+    }
+
+    /// Returns true if `ALTER SCHEMA` supports native `SET key = <literal>`
+    /// assignments separated by whitespace or commas, and `UNSET key, ...`.
+    /// This does not enable structured properties such as `TAG` or `CONTACT`.
+    ///
+    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/alter-schema)
+    fn supports_alter_schema_options(&self) -> bool {
+        false
+    }
+
+    /// Returns true if `ALTER DATABASE` supports native `SET key = <literal>`
+    /// assignments separated by whitespace or commas, and `UNSET key, ...`.
+    /// This does not enable structured properties or other database operations.
+    ///
+    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/alter-database)
+    fn supports_alter_database_options(&self) -> bool {
         false
     }
 

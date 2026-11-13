@@ -155,6 +155,8 @@ pub struct CreateTableBuilder {
     pub with_tags: Option<Vec<Tag>>,
     /// Optional base location for staged data.
     pub base_location: Option<String>,
+    /// Optional Iceberg format version.
+    pub iceberg_version: Option<u64>,
     /// Optional external volume identifier.
     pub external_volume: Option<String>,
     /// Optional catalog name.
@@ -234,6 +236,7 @@ impl CreateTableBuilder {
             with_storage_lifecycle_policy: None,
             with_tags: None,
             base_location: None,
+            iceberg_version: None,
             external_volume: None,
             catalog: None,
             catalog_sync: None,
@@ -604,6 +607,7 @@ impl CreateTableBuilder {
             with_storage_lifecycle_policy: self.with_storage_lifecycle_policy,
             with_tags: self.with_tags,
             base_location: self.base_location,
+            iceberg_version: self.iceberg_version,
             external_volume: self.external_volume,
             catalog: self.catalog,
             catalog_sync: self.catalog_sync,
@@ -685,6 +689,7 @@ impl From<CreateTable> for CreateTableBuilder {
             with_storage_lifecycle_policy: table.with_storage_lifecycle_policy,
             with_tags: table.with_tags,
             base_location: table.base_location,
+            iceberg_version: table.iceberg_version,
             external_volume: table.external_volume,
             catalog: table.catalog,
             catalog_sync: table.catalog_sync,

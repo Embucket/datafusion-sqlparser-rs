@@ -27,7 +27,11 @@ use alloc::{
 use helpers::{
     attached_token::AttachedToken,
     stmt_data_loading::{
-        AlterFileFormatOperation, AlterStageOperation, FileStagingCommand, StageLoadSelectItemKind,
+        AlterFileFormatOperation, AlterStageOperation, FileStagingCommand, Get, Put,
+        StageLoadSelectItemKind,
+    },
+    stmt_warehouse::{
+        AlterWarehouse, CreateWarehouse, DescribeWarehouse, DropWarehouse, ShowWarehouses,
     },
 };
 
@@ -63,27 +67,28 @@ pub use self::dcl::{
 };
 pub use self::ddl::{
     Alignment, AlterCollation, AlterCollationOperation, AlterColumnOperation, AlterConnectorOwner,
-    AlterFunction, AlterFunctionAction, AlterFunctionKind, AlterFunctionOperation,
-    AlterIndexOperation, AlterOperator, AlterOperatorClass, AlterOperatorClassOperation,
-    AlterOperatorFamily, AlterOperatorFamilyOperation, AlterOperatorOperation, AlterPolicy,
-    AlterPolicyOperation, AlterSchema, AlterSchemaOperation, AlterTable, AlterTableAlgorithm,
-    AlterTableLock, AlterTableOperation, AlterTableType, AlterType, AlterTypeAddValue,
-    AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename, AlterTypeRenameValue,
-    ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions, ColumnPolicy,
-    ColumnPolicyProperty, ConstraintCharacteristics, CreateCollation, CreateCollationDefinition,
-    CreateConnector, CreateDomain, CreateExtension, CreateFunction, CreateIndex, CreateOperator,
-    CreateOperatorClass, CreateOperatorFamily, CreatePolicy, CreatePolicyCommand, CreatePolicyType,
-    CreateTable, CreateTrigger, CreateView, Deduplicate, DeferrableInitial, DistStyle,
-    DropBehavior, DropExtension, DropFunction, DropOperator, DropOperatorClass, DropOperatorFamily,
-    DropOperatorSignature, DropPolicy, DropTrigger, ForValues, FunctionReturnType, GeneratedAs,
-    GeneratedExpressionMode, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
-    IdentityPropertyKind, IdentityPropertyOrder, IndexColumn, IndexOption, IndexType,
-    KeyOrIndexDisplay, Msck, NullsDistinctOption, OperatorArgTypes, OperatorClassItem,
-    OperatorFamilyDropItem, OperatorFamilyItem, OperatorOption, OperatorPurpose, Owner, Partition,
-    PartitionBoundValue, ProcedureParam, ReferentialAction, RenameTableNameKind, ReplicaIdentity,
-    TagsColumnOption, TriggerObjectKind, Truncate, UserDefinedTypeCompositeAttributeDef,
-    UserDefinedTypeInternalLength, UserDefinedTypeRangeOption, UserDefinedTypeRepresentation,
-    UserDefinedTypeSqlDefinitionOption, UserDefinedTypeStorage, ViewColumnDef,
+    AlterDatabase, AlterDatabaseOperation, AlterFunction, AlterFunctionAction, AlterFunctionKind,
+    AlterFunctionOperation, AlterIndexOperation, AlterOperator, AlterOperatorClass,
+    AlterOperatorClassOperation, AlterOperatorFamily, AlterOperatorFamilyOperation,
+    AlterOperatorOperation, AlterPolicy, AlterPolicyOperation, AlterSchema, AlterSchemaOperation,
+    AlterTable, AlterTableAlgorithm, AlterTableLock, AlterTableOperation, AlterTableType,
+    AlterType, AlterTypeAddValue, AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename,
+    AlterTypeRenameValue, ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions,
+    ColumnPolicy, ColumnPolicyProperty, ConstraintCharacteristics, CreateCollation,
+    CreateCollationDefinition, CreateConnector, CreateDomain, CreateExtension, CreateFunction,
+    CreateIndex, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreatePolicy,
+    CreatePolicyCommand, CreatePolicyType, CreateTable, CreateTrigger, CreateView, Deduplicate,
+    DeferrableInitial, DistStyle, DropBehavior, DropExtension, DropFunction, DropOperator,
+    DropOperatorClass, DropOperatorFamily, DropOperatorSignature, DropPolicy, DropTrigger,
+    ForValues, FunctionReturnType, GeneratedAs, GeneratedExpressionMode, IdentityParameters,
+    IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
+    IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, Msck, NullsDistinctOption,
+    OperatorArgTypes, OperatorClassItem, OperatorFamilyDropItem, OperatorFamilyItem,
+    OperatorOption, OperatorPurpose, Owner, Partition, PartitionBoundValue, ProcedureParam,
+    ReferentialAction, RenameTableNameKind, ReplicaIdentity, TagsColumnOption, TriggerObjectKind,
+    Truncate, UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
+    UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
+    UserDefinedTypeStorage, ViewColumnDef,
 };
 pub use self::dml::{
     Delete, Insert, Merge, MergeAction, MergeClause, MergeClauseKind, MergeInsertExpr,
@@ -3773,6 +3778,11 @@ pub enum Statement {
     /// See [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#alter_schema_collate_statement)
     AlterSchema(AlterSchema),
     /// ```sql
+    /// ALTER DATABASE
+    /// ```
+    /// See [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/alter-database)
+    AlterDatabase(AlterDatabase),
+    /// ```sql
     /// ALTER INDEX
     /// ```
     AlterIndex {
@@ -4377,6 +4387,12 @@ pub enum Statement {
     /// CREATE SCHEMA
     /// ```
     CreateSchema {
+        /// `true` when `OR REPLACE` was present (Snowflake).
+        #[cfg_attr(feature = "serde", serde(default))]
+        or_replace: bool,
+        /// `true` when `TRANSIENT` was present (Snowflake).
+        #[cfg_attr(feature = "serde", serde(default))]
+        transient: bool,
         /// `<schema name> | AUTHORIZATION <schema authorization identifier>  | <schema name>  AUTHORIZATION <schema authorization identifier>`
         schema_name: SchemaName,
         /// `true` when `IF NOT EXISTS` was present.
@@ -4413,6 +4429,14 @@ pub enum Statement {
         ///
         /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-clone#databases-schemas)
         clone: Option<ObjectName>,
+        /// `true` when `WITH MANAGED ACCESS` was present (Snowflake).
+        #[cfg_attr(feature = "serde", serde(default))]
+        with_managed_access: bool,
+        /// Space-separated Snowflake `COMMENT` and `DATA_RETENTION_TIME_IN_DAYS` assignments.
+        /// Stored as [`SqlOption::KeyValue`] entries in source order, retaining duplicates
+        /// and literal values for the execution consumer to validate.
+        #[cfg_attr(feature = "serde", serde(default))]
+        schema_options: Vec<SqlOption>,
     },
     /// ```sql
     /// CREATE DATABASE
@@ -4741,6 +4765,12 @@ pub enum Statement {
         name: ObjectName,
     },
     /// ```sql
+    /// DESC | DESCRIBE { DATABASE | SCHEMA } <name>
+    /// ```
+    /// See [DESCRIBE DATABASE](https://docs.snowflake.com/en/sql-reference/sql/desc-database)
+    /// and [DESCRIBE SCHEMA](https://docs.snowflake.com/en/sql-reference/sql/desc-schema)
+    DescribeObject(DescribeObject),
+    /// ```sql
     /// [EXPLAIN | DESC | DESCRIBE]  <statement>
     /// ```
     Explain {
@@ -5022,6 +5052,10 @@ pub enum Statement {
     /// Snowflake `REMOVE`
     /// See: <https://docs.snowflake.com/en/sql-reference/sql/remove>
     Remove(FileStagingCommand),
+    /// Snowflake `PUT`: prepare an upload from a local URI to a stage.
+    Put(Put),
+    /// Snowflake `GET`: prepare a download from a stage to a local URI.
+    Get(Get),
     /// RaiseError (MSSQL)
     /// RAISERROR ( { msg_id | msg_str | @local_variable }
     /// { , severity , state }
@@ -5092,6 +5126,16 @@ pub enum Statement {
     /// ```
     /// [PostgreSQL](https://www.postgresql.org/docs/current/sql-reset.html)
     Reset(ResetStatement),
+    /// Snowflake `CREATE WAREHOUSE` syntax; semantic admission belongs to the consumer.
+    CreateWarehouse(CreateWarehouse),
+    /// Snowflake `ALTER WAREHOUSE` syntax.
+    AlterWarehouse(AlterWarehouse),
+    /// Snowflake `SHOW WAREHOUSES` syntax, distinct from SHOW session variables.
+    ShowWarehouses(ShowWarehouses),
+    /// Snowflake `DESC[RIBE] WAREHOUSE` syntax, distinct from table description.
+    DescribeWarehouse(DescribeWarehouse),
+    /// Snowflake single-target `DROP WAREHOUSE` syntax.
+    DropWarehouse(DropWarehouse),
 }
 
 impl From<Analyze> for Statement {
@@ -5234,6 +5278,7 @@ impl fmt::Display for Statement {
 
                 write!(f, "{id}")
             }
+            Statement::DescribeObject(s) => write!(f, "{s}"),
             Statement::ExplainTable {
                 describe_alias,
                 hive_format,
@@ -6186,16 +6231,22 @@ impl fmt::Display for Statement {
                 Ok(())
             }
             Statement::CreateSchema {
+                or_replace,
+                transient,
                 schema_name,
                 if_not_exists,
                 with,
                 options,
                 default_collate_spec,
                 clone,
+                with_managed_access,
+                schema_options,
             } => {
                 write!(
                     f,
-                    "CREATE SCHEMA {if_not_exists}{name}",
+                    "CREATE {or_replace}{transient}SCHEMA {if_not_exists}{name}",
+                    or_replace = if *or_replace { "OR REPLACE " } else { "" },
+                    transient = if *transient { "TRANSIENT " } else { "" },
                     if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
                     name = schema_name
                 )?;
@@ -6214,6 +6265,12 @@ impl fmt::Display for Statement {
 
                 if let Some(clone) = clone {
                     write!(f, " CLONE {clone}")?;
+                }
+                if *with_managed_access {
+                    write!(f, " WITH MANAGED ACCESS")?;
+                }
+                for option in schema_options {
+                    write!(f, " {option}")?;
                 }
                 Ok(())
             }
@@ -6723,9 +6780,17 @@ impl fmt::Display for Statement {
             Statement::Return(r) => write!(f, "{r}"),
             Statement::List(command) => write!(f, "LIST {command}"),
             Statement::Remove(command) => write!(f, "REMOVE {command}"),
+            Statement::Put(command) => write!(f, "{command}"),
+            Statement::Get(command) => write!(f, "{command}"),
             Statement::ExportData(e) => write!(f, "{e}"),
             Statement::CreateUser(s) => write!(f, "{s}"),
+            Statement::CreateWarehouse(s) => write!(f, "{s}"),
+            Statement::AlterWarehouse(s) => write!(f, "{s}"),
+            Statement::ShowWarehouses(s) => write!(f, "{s}"),
+            Statement::DescribeWarehouse(s) => write!(f, "{s}"),
+            Statement::DropWarehouse(s) => write!(f, "{s}"),
             Statement::AlterSchema(s) => write!(f, "{s}"),
+            Statement::AlterDatabase(s) => write!(f, "{s}"),
             Statement::Vacuum(s) => write!(f, "{s}"),
             Statement::AlterUser(s) => write!(f, "{s}"),
             Statement::Reset(s) => write!(f, "{s}"),
@@ -9061,6 +9126,33 @@ impl fmt::Display for DescribeAlias {
     }
 }
 
+/// ```sql
+/// DESC | DESCRIBE { DATABASE | SCHEMA } <name>
+/// ```
+/// See [DESCRIBE DATABASE](https://docs.snowflake.com/en/sql-reference/sql/desc-database)
+/// and [DESCRIBE SCHEMA](https://docs.snowflake.com/en/sql-reference/sql/desc-schema)
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub struct DescribeObject {
+    /// The keyword used, `DESC` or `DESCRIBE`.
+    pub describe_alias: DescribeAlias,
+    /// The kind of object described: `DATABASE` or `SCHEMA`.
+    pub object_type: ObjectType,
+    /// Name of the object.
+    pub name: ObjectName,
+}
+
+impl fmt::Display for DescribeObject {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{} {} {}",
+            self.describe_alias, self.object_type, self.name
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -9265,6 +9357,7 @@ impl fmt::Display for SqlOption {
                 CommentDef::WithoutEq(comment) => {
                     write!(f, "COMMENT '{comment}'")
                 }
+                CommentDef::NullWithEq => write!(f, "COMMENT = NULL"),
             },
             SqlOption::NamedParenthesizedList(value) => {
                 write!(f, "{} = ", value.key)?;
@@ -11060,12 +11153,15 @@ pub enum CommentDef {
     WithEq(String),
     /// Comment variant that omits the `=` when displayed.
     WithoutEq(String),
+    /// Explicit `COMMENT = NULL`, admitted only by Snowflake CREATE TABLE syntax.
+    NullWithEq,
 }
 
 impl Display for CommentDef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CommentDef::WithEq(comment) | CommentDef::WithoutEq(comment) => write!(f, "{comment}"),
+            CommentDef::NullWithEq => write!(f, "NULL"),
         }
     }
 }
@@ -12145,7 +12241,7 @@ impl fmt::Display for AlterUser {
         let has_props = !self.set_props.options.is_empty();
         if has_props {
             write!(f, " SET")?;
-            write!(f, " {}", &self.set_props)?;
+            write!(f, " {}", self.set_props)?;
         }
         if !self.unset_props.is_empty() {
             write!(f, " UNSET {}", display_comma_separated(&self.unset_props))?;
@@ -12689,6 +12785,12 @@ impl From<AlterSchema> for Statement {
     }
 }
 
+impl From<AlterDatabase> for Statement {
+    fn from(a: AlterDatabase) -> Self {
+        Self::AlterDatabase(a)
+    }
+}
+
 impl From<AlterFunction> for Statement {
     fn from(a: AlterFunction) -> Self {
         Self::AlterFunction(a)
@@ -12842,6 +12944,12 @@ impl From<ExportData> for Statement {
 impl From<CreateUser> for Statement {
     fn from(c: CreateUser) -> Self {
         Self::CreateUser(c)
+    }
+}
+
+impl From<DescribeObject> for Statement {
+    fn from(d: DescribeObject) -> Self {
+        Self::DescribeObject(d)
     }
 }
 

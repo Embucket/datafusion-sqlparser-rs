@@ -4761,7 +4761,7 @@ impl<'a> Parser<'a> {
         if self.parse_keyword(expected) {
             Ok(self.get_current_token().clone())
         } else {
-            self.expected_ref(format!("{:?}", &expected).as_str(), self.peek_token_ref())
+            self.expected_ref(format!("{:?}", expected).as_str(), self.peek_token_ref())
         }
     }
 
@@ -4774,7 +4774,7 @@ impl<'a> Parser<'a> {
         if self.parse_keyword(expected) {
             Ok(())
         } else {
-            self.expected_ref(format!("{:?}", &expected).as_str(), self.peek_token_ref())
+            self.expected_ref(format!("{:?}", expected).as_str(), self.peek_token_ref())
         }
     }
 
@@ -5195,6 +5195,22 @@ impl<'a> Parser<'a> {
             } else {
                 self.parse_create_sequence(or_replace, or_alter, temporary)
             }
+        } else if self.peek_keyword(Keyword::SCHEMA) {
+            if or_alter
+                || global.is_some()
+                || temporary
+                || persistent
+                || create_view_params.is_some()
+                || ((or_replace || transient) && !self.dialect.supports_create_schema_options())
+            {
+                self.expected_ref(
+                    "an object type supporting the CREATE modifiers",
+                    self.peek_token_ref(),
+                )
+            } else {
+                self.expect_keyword_is(Keyword::SCHEMA)?;
+                self.parse_create_schema_with_modifiers(or_replace, transient)
+            }
         } else if or_replace {
             self.expected_ref(
                 "[EXTERNAL] TABLE or [MATERIALIZED] VIEW or FUNCTION after CREATE OR REPLACE",
@@ -5208,8 +5224,6 @@ impl<'a> Parser<'a> {
             self.parse_create_index(true).map(Into::into)
         } else if self.parse_keyword(Keyword::VIRTUAL) {
             self.parse_create_virtual_table()
-        } else if self.parse_keyword(Keyword::SCHEMA) {
-            self.parse_create_schema()
         } else if self.parse_keyword(Keyword::DATABASE) {
             self.parse_create_database()
         } else if self.parse_keyword(Keyword::ROLE) {
@@ -5448,6 +5462,14 @@ impl<'a> Parser<'a> {
 
     /// Parse a `CREATE SCHEMA` statement.
     pub fn parse_create_schema(&mut self) -> Result<Statement, ParserError> {
+        self.parse_create_schema_with_modifiers(false, false)
+    }
+
+    fn parse_create_schema_with_modifiers(
+        &mut self,
+        or_replace: bool,
+        transient: bool,
+    ) -> Result<Statement, ParserError> {
         let if_not_exists = self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
 
         let schema_name = self.parse_schema_name()?;
@@ -5458,7 +5480,10 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let with = if self.peek_keyword(Keyword::WITH) {
+        let with = if self.peek_keyword(Keyword::WITH)
+            && !(self.dialect.supports_create_schema_options()
+                && self.peek_keywords(&[Keyword::WITH, Keyword::MANAGED]))
+        {
             Some(self.parse_options(Keyword::WITH)?)
         } else {
             None
@@ -5476,13 +5501,39 @@ impl<'a> Parser<'a> {
             None
         };
 
+        let with_managed_access = self.dialect.supports_create_schema_options()
+            && self.parse_keywords(&[Keyword::WITH, Keyword::MANAGED]);
+        if with_managed_access {
+            self.expect_keyword_is(Keyword::ACCESS)?;
+        }
+
+        let mut schema_options = Vec::new();
+        if self.dialect.supports_create_schema_options() {
+            while self
+                .peek_one_of_keywords(&[Keyword::COMMENT, Keyword::DATA_RETENTION_TIME_IN_DAYS])
+                .is_some()
+            {
+                let key = self.parse_identifier()?;
+                self.expect_token(&Token::Eq)?;
+                let value = match self.peek_token_ref().token {
+                    Token::Number(..) | Token::Plus | Token::Minus => self.parse_number()?,
+                    _ => Expr::Value(self.parse_value()?),
+                };
+                schema_options.push(SqlOption::KeyValue { key, value });
+            }
+        }
+
         Ok(Statement::CreateSchema {
+            or_replace,
+            transient,
             schema_name,
             if_not_exists,
             with,
             options,
             default_collate_spec,
             clone,
+            with_managed_access,
+            schema_options,
         })
     }
 
@@ -10265,7 +10316,7 @@ impl<'a> Parser<'a> {
                 } else {
                     let column_keyword = self.parse_keyword(Keyword::COLUMN);
 
-                    let if_not_exists = if dialect_of!(self is PostgreSqlDialect | BigQueryDialect | DuckDbDialect | GenericDialect)
+                    let if_not_exists = if dialect_of!(self is PostgreSqlDialect | BigQueryDialect | DuckDbDialect | SnowflakeDialect | GenericDialect)
                     {
                         self.parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS])
                             || if_not_exists
@@ -10741,6 +10792,10 @@ impl<'a> Parser<'a> {
 
     /// Parse an `ALTER <object>` statement and dispatch to the appropriate alter handler.
     pub fn parse_alter(&mut self) -> Result<Statement, ParserError> {
+        if self.peek_keyword(Keyword::DATABASE) && self.dialect.supports_alter_database_options() {
+            self.prev_token();
+            return self.parse_alter_database();
+        }
         let object_type = self.expect_one_of_keywords(&[
             Keyword::VIEW,
             Keyword::TYPE,
@@ -11514,6 +11569,34 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parse a native `ALTER DATABASE` primitive property statement.
+    pub fn parse_alter_database(&mut self) -> Result<Statement, ParserError> {
+        if !self.dialect.supports_alter_database_options() {
+            return self.expected_ref(
+                "dialect supporting ALTER DATABASE properties",
+                self.peek_token_ref(),
+            );
+        }
+        self.expect_keywords(&[Keyword::ALTER, Keyword::DATABASE])?;
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        let operation = if self.parse_keyword(Keyword::SET) {
+            let options = self.parse_alter_namespace_set_options("database")?;
+            AlterDatabaseOperation::SetOptions { options }
+        } else if self.parse_keyword(Keyword::UNSET) {
+            let options = self.parse_alter_namespace_unset_options("database")?;
+            AlterDatabaseOperation::UnsetOptions { options }
+        } else {
+            return self.expected_ref("ALTER DATABASE property operation", self.peek_token_ref());
+        };
+        Ok(AlterDatabase {
+            name,
+            if_exists,
+            operations: vec![operation],
+        }
+        .into())
+    }
+
     /// Parse an `ALTER SCHEMA` statement.
     ///
     /// Supports operations such as setting options, renaming, adding/dropping replicas, and changing owner.
@@ -11545,6 +11628,13 @@ impl<'a> Parser<'a> {
         } else if self.parse_keywords(&[Keyword::OWNER, Keyword::TO]) {
             let owner = self.parse_owner()?;
             AlterSchemaOperation::OwnerTo { owner }
+        } else if self.dialect.supports_alter_schema_options() && self.parse_keyword(Keyword::SET) {
+            let options = self.parse_alter_namespace_set_options("schema")?;
+            AlterSchemaOperation::SetOptions { options }
+        } else if self.dialect.supports_alter_schema_options() && self.parse_keyword(Keyword::UNSET)
+        {
+            let options = self.parse_alter_namespace_unset_options("schema")?;
+            AlterSchemaOperation::UnsetOptions { options }
         } else {
             return self.expected_ref("ALTER SCHEMA operation", self.peek_token_ref());
         };
@@ -11553,6 +11643,88 @@ impl<'a> Parser<'a> {
             if_exists,
             operations: vec![operation],
         }))
+    }
+
+    fn parse_alter_namespace_option_name(
+        &mut self,
+        object_type: &str,
+    ) -> Result<Ident, ParserError> {
+        if !matches!(self.peek_token_ref().token, Token::Word(_))
+            || self
+                .peek_one_of_keywords(&[Keyword::TAG, Keyword::CONTACT])
+                .is_some()
+        {
+            return self.expected_ref(
+                &format!("primitive {object_type} property name"),
+                self.peek_token_ref(),
+            );
+        }
+        self.parse_identifier()
+    }
+
+    fn parse_alter_namespace_unset_options(
+        &mut self,
+        object_type: &str,
+    ) -> Result<Vec<Ident>, ParserError> {
+        let options = self.parse_comma_separated_with_trailing_commas(
+            |parser| parser.parse_alter_namespace_option_name(object_type),
+            false,
+            Self::is_reserved_for_column_alias,
+        )?;
+        if !matches!(self.peek_token_ref().token, Token::EOF | Token::SemiColon) {
+            return self.expected_ref("comma or statement end", self.peek_token_ref());
+        }
+        Ok(options)
+    }
+
+    fn parse_alter_namespace_set_options(
+        &mut self,
+        object_type: &str,
+    ) -> Result<Vec<SqlOption>, ParserError> {
+        let mut options = Vec::new();
+        loop {
+            let key = self.parse_alter_namespace_option_name(object_type)?;
+            self.expect_token(&Token::Eq)?;
+            let value = match self.peek_token_ref().token {
+                Token::Plus | Token::Minus
+                    if !matches!(self.peek_nth_token_ref(1).token, Token::Number(..)) =>
+                {
+                    return self.expected_ref("signed numeric literal", self.peek_token_ref());
+                }
+                Token::Number(..) | Token::Plus | Token::Minus => self.parse_number()?,
+                Token::EOF
+                | Token::SemiColon
+                | Token::Placeholder(_)
+                | Token::Colon
+                | Token::AtSign => {
+                    return self.expected_ref(
+                        &format!("primitive {object_type} property literal"),
+                        self.peek_token_ref(),
+                    );
+                }
+                _ => Expr::Value(self.parse_value()?),
+            };
+            options.push(SqlOption::KeyValue { key, value });
+
+            let space_separated = matches!(
+                self.peek_nth_token_no_skip_ref(0).token,
+                Token::Whitespace(_)
+            );
+            if self.consume_token(&Token::Comma) {
+                continue;
+            }
+            match self.peek_token_ref().token {
+                Token::EOF | Token::SemiColon => break,
+                Token::Word(_) if space_separated => {}
+                _ => {
+                    return self.expected_ref(
+                        &format!("{object_type} property separator or statement end"),
+                        self.peek_token_ref(),
+                    )
+                }
+            }
+        }
+        Ok(options)
     }
 
     /// Parse a `CALL procedure_name(arg1, arg2, ...)`
@@ -13436,7 +13608,7 @@ impl<'a> Parser<'a> {
                 token => {
                     return Err(ParserError::ParserError(format!(
                         "Unexpected token in identifier: {token}"
-                    )))?;
+                    )));
                 }
             }
         }
@@ -14073,6 +14245,11 @@ impl<'a> Parser<'a> {
         &mut self,
         describe_alias: DescribeAlias,
     ) -> Result<Statement, ParserError> {
+        if describe_alias != DescribeAlias::Explain && self.dialect.supports_describe_object() {
+            if let Some(statement) = self.parse_describe_object(describe_alias)? {
+                return Ok(statement);
+            }
+        }
         let mut analyze = false;
         let mut verbose = false;
         let mut query_plan = false;
@@ -14171,6 +14348,29 @@ impl<'a> Parser<'a> {
                 })
             }
         }
+    }
+
+    /// Parse `{ DATABASE | SCHEMA } <name>` following `DESC | DESCRIBE`.
+    /// VIEW retains this fork's existing `ExplainTable::has_view_keyword` representation.
+    /// Returns `None` if none of the object type keywords is present.
+    fn parse_describe_object(
+        &mut self,
+        describe_alias: DescribeAlias,
+    ) -> Result<Option<Statement>, ParserError> {
+        let object_type = match self.parse_one_of_keywords(&[Keyword::DATABASE, Keyword::SCHEMA]) {
+            Some(Keyword::DATABASE) => ObjectType::Database,
+            Some(Keyword::SCHEMA) => ObjectType::Schema,
+            _ => return Ok(None),
+        };
+        let name = self.parse_object_name(false)?;
+        Ok(Some(
+            DescribeObject {
+                describe_alias,
+                object_type,
+                name,
+            }
+            .into(),
+        ))
     }
 
     /// Parse a query expression, i.e. a `SELECT` statement optionally
@@ -16872,7 +17072,7 @@ impl<'a> Parser<'a> {
                         tok.token
                     ),
                     tok.span.start
-                )?;
+                );
             }
         }
 

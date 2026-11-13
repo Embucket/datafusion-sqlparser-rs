@@ -1719,7 +1719,7 @@ fn parse_json_ops_without_colon() {
     ];
 
     for (str_op, op, dialects) in binary_ops {
-        let select = dialects.verified_only_select(&format!("SELECT a {} b", &str_op));
+        let select = dialects.verified_only_select(&format!("SELECT a {} b", str_op));
         assert_eq!(
             SelectItem::UnnamedExpr(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("a"))),
@@ -2415,7 +2415,7 @@ fn parse_bitwise_ops() {
     ];
 
     for (str_op, op, dialects) in bitwise_ops {
-        let select = dialects.verified_only_select(&format!("SELECT a {} b", &str_op));
+        let select = dialects.verified_only_select(&format!("SELECT a {} b", str_op));
         assert_eq!(
             SelectItem::UnnamedExpr(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("a"))),
@@ -18622,7 +18622,7 @@ fn parse_generic_unary_ops() {
         ("+", UnaryOperator::Plus),
     ];
     for (str_op, op) in unary_ops {
-        let select = verified_only_select(&format!("SELECT {}expr", &str_op));
+        let select = verified_only_select(&format!("SELECT {}expr", str_op));
         assert_eq!(
             UnnamedExpr(UnaryOp {
                 op: *op,
@@ -18912,4 +18912,144 @@ fn parse_non_pg_dialects_keep_xml_names_as_regular_identifiers() {
     // be treated as a regular column identifier, not a typed-string prefix.
     let dialects = all_dialects_except(|d| d.supports_xml_expressions());
     dialects.verified_only_select("SELECT xml FROM t");
+}
+
+#[test]
+fn parse_describe_object() {
+    let dialects = all_dialects_where(|d| d.supports_describe_object());
+    dialects.verified_stmt("DESCRIBE DATABASE d");
+    dialects.verified_stmt("DESC SCHEMA db.s");
+
+    let dialects = all_dialects_where(|d| !d.supports_describe_object());
+    assert!(matches!(
+        dialects.verified_stmt("DESC schema"),
+        Statement::ExplainTable { .. }
+    ));
+}
+
+#[test]
+fn parse_describe_object_keeps_kind_alias_and_quoted_names() {
+    let dialects = all_dialects_where(|d| d.supports_describe_object());
+    for (alias, expected_alias) in [
+        ("DESC", DescribeAlias::Desc),
+        ("DESCRIBE", DescribeAlias::Describe),
+    ] {
+        for (kind, expected_type, name, parts) in [
+            ("DATABASE", ObjectType::Database, r#""Db.With.Dots""#, 1),
+            (
+                "SCHEMA",
+                ObjectType::Schema,
+                r#""Db.With.Dots"."Sch ""quoted""""#,
+                2,
+            ),
+        ] {
+            let sql = format!("{alias} {kind} {name}");
+            let statement = dialects.verified_stmt(&sql);
+            assert_eq!(statement.span(), Span::empty());
+            let Statement::DescribeObject(description) = statement else {
+                panic!("expected DescribeObject for {sql}");
+            };
+            assert_eq!(description.describe_alias, expected_alias);
+            assert_eq!(description.object_type, expected_type);
+            assert_eq!(description.name.to_string(), name);
+            assert_eq!(description.name.0.len(), parts);
+            assert_eq!(Statement::from(description).to_string(), sql);
+        }
+    }
+}
+
+#[test]
+fn parse_describe_object_preserves_batch_boundaries() {
+    let dialects = all_dialects_where(|d| d.supports_describe_object());
+    let statements = dialects
+        .parse_sql_statements("DESC DATABASE d; /* next */ DESCRIBE SCHEMA d.s; SELECT 1;")
+        .unwrap();
+    assert_eq!(statements.len(), 3);
+    assert!(matches!(&statements[0], Statement::DescribeObject(value)
+        if value.object_type == ObjectType::Database));
+    assert!(matches!(&statements[1], Statement::DescribeObject(value)
+        if value.object_type == ObjectType::Schema));
+    assert!(matches!(&statements[2], Statement::Query(_)));
+}
+
+#[test]
+fn parse_describe_object_rejects_incomplete_or_trailing_syntax() {
+    let dialects = all_dialects_where(|d| d.supports_describe_object());
+    for sql in [
+        "DESC DATABASE",
+        "DESCRIBE SCHEMA",
+        "DESC SCHEMA db.",
+        "DESCRIBE DATABASE d WHERE TRUE",
+        "DESC SCHEMA d.s extra",
+    ] {
+        assert!(dialects.parse_sql_statements(sql).is_err(), "{sql}");
+    }
+    assert!(matches!(
+        dialects.verified_stmt(r#"DESC "SCHEMA""#),
+        Statement::ExplainTable { .. }
+    ));
+    assert!(matches!(
+        dialects.verified_stmt("EXPLAIN SELECT 1"),
+        Statement::Explain { .. }
+    ));
+}
+
+#[test]
+fn parse_describe_object_rejects_query_modifiers() {
+    let dialects = all_dialects_where(|d| d.supports_describe_object());
+    for alias in ["DESC", "DESCRIBE"] {
+        for modifier in [
+            "ANALYZE",
+            "VERBOSE",
+            "QUERY PLAN",
+            "ESTIMATE",
+            "FORMAT JSON",
+        ] {
+            for kind in ["DATABASE", "SCHEMA"] {
+                let sql = format!("{alias} {modifier} {kind} d");
+                assert!(dialects.parse_sql_statements(&sql).is_err(), "{sql}");
+            }
+        }
+    }
+}
+
+#[cfg(feature = "visitor")]
+#[test]
+fn describe_object_does_not_visit_namespaces_as_table_relations() {
+    use core::ops::ControlFlow;
+
+    #[derive(Default)]
+    struct Relations(Vec<String>);
+    impl Visitor for Relations {
+        type Break = ();
+
+        fn pre_visit_relation(&mut self, name: &ObjectName) -> ControlFlow<Self::Break> {
+            self.0.push(name.to_string());
+            ControlFlow::Continue(())
+        }
+    }
+
+    let dialects = all_dialects_where(|d| d.supports_describe_object());
+    let mut relations = Relations::default();
+    for sql in ["DESC DATABASE d", "DESCRIBE SCHEMA d.s"] {
+        assert!(dialects
+            .verified_stmt(sql)
+            .visit(&mut relations)
+            .is_continue());
+        assert!(relations.0.is_empty());
+    }
+    assert!(dialects
+        .verified_stmt("SELECT * FROM t")
+        .visit(&mut relations)
+        .is_continue());
+    assert_eq!(relations.0, vec!["t"]);
+}
+
+#[cfg(all(feature = "serde", feature = "serde_json"))]
+#[test]
+fn describe_object_serde_round_trip() {
+    let statement = all_dialects_where(|d| d.supports_describe_object())
+        .verified_stmt(r#"DESCRIBE SCHEMA "Db"."Sch.With.Dot""#);
+    let json = serde_json::to_string(&statement).unwrap();
+    assert_eq!(serde_json::from_str::<Statement>(&json).unwrap(), statement);
 }

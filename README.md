@@ -30,6 +30,26 @@ This crate contains a lexer and parser for SQL that conforms with the
 is used as a foundation for SQL query engines, vendor-specific
 parsers, and various SQL analysis.
 
+Snowflake warehouse parsing uses typed CREATE, ALTER, SHOW,
+DESCRIBE and DROP nodes in `ast::helpers::stmt_warehouse`; USE keeps its existing
+AST. It retains quoted/multipart account names and ordered primitive options for
+later semantic validation. Parsing does not implement warehouses, authorize an
+operation, evaluate properties, or establish wire metadata/error parity. Tags,
+CREATE OR ALTER, adaptive/interactive control, ABORT ALL QUERIES and SHOW privilege
+filters remain outside this selected grammar.
+
+The Snowflake table-comment source preparation adds explicit `COMMENT = NULL` as
+`SqlOption::Comment(CommentDef::NullWithEq)` within `CreateTableOptions::Plain`.
+An absent clause, `COMMENT = ''`, `COMMENT = 'NULL'` and typed NULL remain distinct.
+Existing string and dollar-quoted comments keep their string AST variants. Only
+the dedicated CREATE TABLE arm admits NULL; shared column/stage/file-format/view
+and connector string parsers remain strict, as does table `COMMENT NULL` without
+`=`. The selected Snowflake 10.40.102 reference is a temporary CREATE table
+(query `01c83e8c-0209-ab5f-0004-d66e05c171ae`), without a persistence/runtime claim.
+This preparation is unqualified until the fork checks run. The additive public
+enum variant can break external exhaustive matches or old serde readers; existing
+string constructors/representations stay intact, without a binary ABI guarantee.
+
 ## Example
 
 To parse a simple `SELECT` statement:
@@ -78,7 +98,42 @@ This crate avoids semantic analysis because it varies drastically
 between dialects and implementations. If you want to do semantic
 analysis, feel free to use this project as a base.
 
-## Preserves Syntax Round Trip 
+## Snowflake transfer operands
+
+`SnowflakeDialect` represents `PUT` and `GET` with dedicated statement nodes and
+typed local URI, stage, and binding operands. A named stage retains its real
+`ObjectName` identifiers and a separate exact payload prefix. User and table
+stages remain distinct AST forms. Stage operands are not annotated as table
+relations for generic relation discovery.
+
+Only the first two operands after a statement-start transfer keyword use opaque
+location tokenization. This keeps `file://`, `/*` globs, `--` filenames, `?`, and
+`#` intact without changing ordinary SQL comments or identifiers/functions named
+`PUT` and `GET`. Single-quoted transfer operands retain literal backslashes and
+use doubled quotes for a literal quote; ordinary SQL string escape rules outside
+these operands are unchanged. Whole-stage single quotes are a local grammar form,
+not independent Snowflake reference evidence. Double-quoted local URIs and
+`IDENTIFIER(...)` transfer operands are outside this grammar.
+
+Options retain their original order, duplicates, and typed `Expr` values, including
+signed numeric spelling. Optional numeric spelling metadata retains forms such as
+`001` even when the `bigdecimal` feature normalizes the typed number; rendering
+ignores stale spelling after a visitor changes that numeric value. Location
+bindings use normal placeholder expressions so
+expression visitors can apply the owning engine's existing binding accounting.
+`dialect::snowflake::parse_file_transfer_stage_location` converts an exact bound
+stage value into a typed target without manufacturing a SQL statement.
+
+The parser performs no storage IO, option evaluation, range checking, async/batch
+admission, or transfer execution. The execution layer must validate primitive
+option shapes and supported stage kinds before planning/evaluating expressions
+or submitting work. Accepting syntax does not claim a transfer transport or a
+complete Snowflake workflow. In particular, path traversal/backslash admission,
+`PARALLEL` range errors, duplicate/unknown options, and unsupported stage kinds
+remain semantic responsibilities. These additions require owning qualification;
+source tests alone do not establish runtime or reference parity.
+
+## Preserves Syntax Round Trip
 
 This crate allows users to recover the original SQL text (with comments removed,
 normalized whitespace and keyword capitalization), which is useful for tools

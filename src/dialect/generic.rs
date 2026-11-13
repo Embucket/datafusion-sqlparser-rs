@@ -121,6 +121,10 @@ impl Dialect for GenericDialect {
         true
     }
 
+    fn supports_create_schema_options(&self) -> bool {
+        true
+    }
+
     fn supports_parens_around_table_factor(&self) -> bool {
         true
     }
@@ -310,6 +314,9 @@ impl Dialect for GenericDialect {
     }
 
     fn supports_xml_expressions(&self) -> bool {
+        true
+    }
+    fn supports_describe_object(&self) -> bool {
         true
     }
 }

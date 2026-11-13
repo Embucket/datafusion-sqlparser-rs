@@ -26,6 +26,35 @@ snowflake().one_statement_parses_to(
 ```
 
 ## Analyzing Parsing Issues
+
+Warehouse commands use Snowflake-only typed syntax in
+`ast/helpers/stmt_warehouse.rs`, dispatched through the existing Snowflake dialect
+override. Keep account-object names distinct from table relations. Preserve ordered
+primitive properties, including duplicate or semantically invalid values, for the
+execution consumer to validate. Never evaluate properties, normalize account identity,
+consume statement delimiters inside option loops, or infer runtime support from an AST.
+Run the required fork checks below before committing changes to this syntax.
+
+Namespace DESCRIBE backports retain this fork's existing VIEW representation
+(`ExplainTable::has_view_keyword`), stage/file-format/sequence syntax and statement
+boundaries. `DescribeObject` admits DATABASE/SCHEMA only; account namespaces must
+not acquire table-relation visitor annotations. Parser tests do not establish
+DataFusion or Rustice runtime support for the additive AST variant.
+
+Snowflake CREATE TABLE's dedicated COMMENT option admits explicit `= NULL` as
+`SqlOption::Comment(CommentDef::NullWithEq)` in plain table options. Keep existing
+string variants and the shared `parse_comment_value` strict: column, stage, file
+format, view and connector comments do not gain NULL syntax. Do not collapse NULL
+into an empty string or absent clause, infer no-`=` NULL syntax, or rewrite SQL.
+The additive public enum variant requires an exhaustive-match/serde consumer audit
+and a coherent parser/DataFusion/engine pin qualification before runtime claims.
+
+For Snowflake `PUT`/`GET`, keep opaque location lexing confined to the two operands
+at actual statement start. Preserve ordinary comments and identifiers/functions
+named `PUT`/`GET`. Keep stage `ObjectName` quoting separate from the exact payload
+prefix, avoid table-relation visitor annotations for named stages, and retain
+bindings as normal expression placeholders. The parser must not resolve paths,
+perform storage IO, evaluate options, or enforce an engine's transfer policy.
 You can try to simplify the SQL statement to identify the root cause of the parsing issue. This may involve removing certain clauses or components of the SQL statement to see if it can be parsed successfully. Additionally, you can compare the problematic SQL statement with similar statements that are parsed correctly to identify any differences that may be causing the issue.
 
 ## Pre Commit Checks
