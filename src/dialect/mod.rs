@@ -1501,6 +1501,14 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if `CREATE SCHEMA` supports space-separated `COMMENT = <literal>`
+    /// and `DATA_RETENTION_TIME_IN_DAYS = <literal>` suffix options.
+    ///
+    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-schema)
+    fn supports_create_schema_options(&self) -> bool {
+        false
+    }
+
     /// Returns true if the dialect supports the `USING` clause in an `ALTER COLUMN` statement.
     /// Example:
     ///  ```sql

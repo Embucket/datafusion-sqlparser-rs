@@ -4417,6 +4417,11 @@ pub enum Statement {
         ///
         /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/create-clone#databases-schemas)
         clone: Option<ObjectName>,
+        /// Space-separated Snowflake `COMMENT` and `DATA_RETENTION_TIME_IN_DAYS` assignments.
+        /// Stored as [`SqlOption::KeyValue`] entries in source order, retaining duplicates
+        /// and literal values for the execution consumer to validate.
+        #[cfg_attr(feature = "serde", serde(default))]
+        schema_options: Vec<SqlOption>,
     },
     /// ```sql
     /// CREATE DATABASE
@@ -6217,6 +6222,7 @@ impl fmt::Display for Statement {
                 options,
                 default_collate_spec,
                 clone,
+                schema_options,
             } => {
                 write!(
                     f,
@@ -6239,6 +6245,9 @@ impl fmt::Display for Statement {
 
                 if let Some(clone) = clone {
                     write!(f, " CLONE {clone}")?;
+                }
+                for option in schema_options {
+                    write!(f, " {option}")?;
                 }
                 Ok(())
             }
