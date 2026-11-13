@@ -67,27 +67,28 @@ pub use self::dcl::{
 };
 pub use self::ddl::{
     Alignment, AlterCollation, AlterCollationOperation, AlterColumnOperation, AlterConnectorOwner,
-    AlterFunction, AlterFunctionAction, AlterFunctionKind, AlterFunctionOperation,
-    AlterIndexOperation, AlterOperator, AlterOperatorClass, AlterOperatorClassOperation,
-    AlterOperatorFamily, AlterOperatorFamilyOperation, AlterOperatorOperation, AlterPolicy,
-    AlterPolicyOperation, AlterSchema, AlterSchemaOperation, AlterTable, AlterTableAlgorithm,
-    AlterTableLock, AlterTableOperation, AlterTableType, AlterType, AlterTypeAddValue,
-    AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename, AlterTypeRenameValue,
-    ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions, ColumnPolicy,
-    ColumnPolicyProperty, ConstraintCharacteristics, CreateCollation, CreateCollationDefinition,
-    CreateConnector, CreateDomain, CreateExtension, CreateFunction, CreateIndex, CreateOperator,
-    CreateOperatorClass, CreateOperatorFamily, CreatePolicy, CreatePolicyCommand, CreatePolicyType,
-    CreateTable, CreateTrigger, CreateView, Deduplicate, DeferrableInitial, DistStyle,
-    DropBehavior, DropExtension, DropFunction, DropOperator, DropOperatorClass, DropOperatorFamily,
-    DropOperatorSignature, DropPolicy, DropTrigger, ForValues, FunctionReturnType, GeneratedAs,
-    GeneratedExpressionMode, IdentityParameters, IdentityProperty, IdentityPropertyFormatKind,
-    IdentityPropertyKind, IdentityPropertyOrder, IndexColumn, IndexOption, IndexType,
-    KeyOrIndexDisplay, Msck, NullsDistinctOption, OperatorArgTypes, OperatorClassItem,
-    OperatorFamilyDropItem, OperatorFamilyItem, OperatorOption, OperatorPurpose, Owner, Partition,
-    PartitionBoundValue, ProcedureParam, ReferentialAction, RenameTableNameKind, ReplicaIdentity,
-    TagsColumnOption, TriggerObjectKind, Truncate, UserDefinedTypeCompositeAttributeDef,
-    UserDefinedTypeInternalLength, UserDefinedTypeRangeOption, UserDefinedTypeRepresentation,
-    UserDefinedTypeSqlDefinitionOption, UserDefinedTypeStorage, ViewColumnDef,
+    AlterDatabase, AlterDatabaseOperation, AlterFunction, AlterFunctionAction, AlterFunctionKind,
+    AlterFunctionOperation, AlterIndexOperation, AlterOperator, AlterOperatorClass,
+    AlterOperatorClassOperation, AlterOperatorFamily, AlterOperatorFamilyOperation,
+    AlterOperatorOperation, AlterPolicy, AlterPolicyOperation, AlterSchema, AlterSchemaOperation,
+    AlterTable, AlterTableAlgorithm, AlterTableLock, AlterTableOperation, AlterTableType,
+    AlterType, AlterTypeAddValue, AlterTypeAddValuePosition, AlterTypeOperation, AlterTypeRename,
+    AlterTypeRenameValue, ClusteredBy, ColumnDef, ColumnOption, ColumnOptionDef, ColumnOptions,
+    ColumnPolicy, ColumnPolicyProperty, ConstraintCharacteristics, CreateCollation,
+    CreateCollationDefinition, CreateConnector, CreateDomain, CreateExtension, CreateFunction,
+    CreateIndex, CreateOperator, CreateOperatorClass, CreateOperatorFamily, CreatePolicy,
+    CreatePolicyCommand, CreatePolicyType, CreateTable, CreateTrigger, CreateView, Deduplicate,
+    DeferrableInitial, DistStyle, DropBehavior, DropExtension, DropFunction, DropOperator,
+    DropOperatorClass, DropOperatorFamily, DropOperatorSignature, DropPolicy, DropTrigger,
+    ForValues, FunctionReturnType, GeneratedAs, GeneratedExpressionMode, IdentityParameters,
+    IdentityProperty, IdentityPropertyFormatKind, IdentityPropertyKind, IdentityPropertyOrder,
+    IndexColumn, IndexOption, IndexType, KeyOrIndexDisplay, Msck, NullsDistinctOption,
+    OperatorArgTypes, OperatorClassItem, OperatorFamilyDropItem, OperatorFamilyItem,
+    OperatorOption, OperatorPurpose, Owner, Partition, PartitionBoundValue, ProcedureParam,
+    ReferentialAction, RenameTableNameKind, ReplicaIdentity, TagsColumnOption, TriggerObjectKind,
+    Truncate, UserDefinedTypeCompositeAttributeDef, UserDefinedTypeInternalLength,
+    UserDefinedTypeRangeOption, UserDefinedTypeRepresentation, UserDefinedTypeSqlDefinitionOption,
+    UserDefinedTypeStorage, ViewColumnDef,
 };
 pub use self::dml::{
     Delete, Insert, Merge, MergeAction, MergeClause, MergeClauseKind, MergeInsertExpr,
@@ -3777,6 +3778,11 @@ pub enum Statement {
     /// See [BigQuery](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-definition-language#alter_schema_collate_statement)
     AlterSchema(AlterSchema),
     /// ```sql
+    /// ALTER DATABASE
+    /// ```
+    /// See [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/alter-database)
+    AlterDatabase(AlterDatabase),
+    /// ```sql
     /// ALTER INDEX
     /// ```
     AlterIndex {
@@ -6767,6 +6773,7 @@ impl fmt::Display for Statement {
             Statement::DescribeWarehouse(s) => write!(f, "{s}"),
             Statement::DropWarehouse(s) => write!(f, "{s}"),
             Statement::AlterSchema(s) => write!(f, "{s}"),
+            Statement::AlterDatabase(s) => write!(f, "{s}"),
             Statement::Vacuum(s) => write!(f, "{s}"),
             Statement::AlterUser(s) => write!(f, "{s}"),
             Statement::Reset(s) => write!(f, "{s}"),
@@ -12758,6 +12765,12 @@ impl From<CreateOperatorClass> for Statement {
 impl From<AlterSchema> for Statement {
     fn from(a: AlterSchema) -> Self {
         Self::AlterSchema(a)
+    }
+}
+
+impl From<AlterDatabase> for Statement {
+    fn from(a: AlterDatabase) -> Self {
+        Self::AlterDatabase(a)
     }
 }
 

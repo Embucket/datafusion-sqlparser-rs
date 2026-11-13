@@ -7535,3 +7535,429 @@ fn snowflake_alter_schema_options_visitors_do_not_treat_names_as_relations() {
         assert_eq!(result, ControlFlow::Continue(()));
     }
 }
+
+#[test]
+fn snowflake_alter_database_comment_fixtures() {
+    for (sql, name, if_exists, operation) in [
+        (
+            "ALTER DATABASE DB_META SET COMMENT = 'database metadata'",
+            "DB_META",
+            false,
+            AlterDatabaseOperation::SetOptions {
+                options: vec![SqlOption::KeyValue {
+                    key: Ident::new("COMMENT"),
+                    value: Expr::Value(
+                        Value::SingleQuotedString("database metadata".into()).into(),
+                    ),
+                }],
+            },
+        ),
+        (
+            "ALTER DATABASE DB_META UNSET COMMENT",
+            "DB_META",
+            false,
+            AlterDatabaseOperation::UnsetOptions {
+                options: vec![Ident::new("COMMENT")],
+            },
+        ),
+        (
+            "ALTER DATABASE IF EXISTS DB_META_MISSING SET COMMENT = 'missing'",
+            "DB_META_MISSING",
+            true,
+            AlterDatabaseOperation::SetOptions {
+                options: vec![SqlOption::KeyValue {
+                    key: Ident::new("COMMENT"),
+                    value: Expr::Value(Value::SingleQuotedString("missing".into()).into()),
+                }],
+            },
+        ),
+        (
+            "ALTER DATABASE IF EXISTS DB_META_MISSING UNSET COMMENT",
+            "DB_META_MISSING",
+            true,
+            AlterDatabaseOperation::UnsetOptions {
+                options: vec![Ident::new("COMMENT")],
+            },
+        ),
+    ] {
+        let statement = snowflake().verified_stmt(sql);
+        let expected = AlterDatabase {
+            name: ObjectName::from(vec![Ident::new(name)]),
+            if_exists,
+            operations: vec![operation],
+        };
+        assert_eq!(statement, Statement::AlterDatabase(expected.clone()));
+        assert_eq!(Statement::from(expected), statement.clone());
+    }
+}
+
+#[test]
+fn snowflake_alter_database_options_preserve_primitive_literals_and_duplicates() {
+    for value in [
+        "NULL",
+        "true",
+        "false",
+        "-1",
+        "+1",
+        "1.5",
+        "999999999999999999999999999999",
+        "''",
+        "'invalid'",
+        "$$opaque; -- /* */$$",
+    ] {
+        snowflake().verified_stmt(&format!("ALTER DATABASE DB_META SET COMMENT = {value}"));
+    }
+    snowflake().one_statement_parses_to(
+        "ALTER DATABASE DB_META SET COMMENT = TRUE DATA_RETENTION_TIME_IN_DAYS = 1e3",
+        &format!(
+            "ALTER DATABASE DB_META SET COMMENT = true DATA_RETENTION_TIME_IN_DAYS = {}",
+            number("1e3")
+        ),
+    );
+    let Statement::AlterDatabase(database) = snowflake().one_statement_parses_to(
+        r#"ALTER /* object */ DATABASE IF EXISTS "DB_META" SET
+            COMMENT /* key */ = NULL,
+            DATA_RETENTION_TIME_IN_DAYS = -- value
+                -1 COMMENT='x'/* separator */COMMENT = 42;"#,
+        r#"ALTER DATABASE IF EXISTS "DB_META" SET COMMENT = NULL DATA_RETENTION_TIME_IN_DAYS = -1 COMMENT = 'x' COMMENT = 42"#,
+    ) else {
+        panic!("expected ALTER DATABASE");
+    };
+    assert_eq!(
+        database.operations,
+        vec![AlterDatabaseOperation::SetOptions {
+            options: vec![
+                SqlOption::KeyValue {
+                    key: Ident::new("COMMENT"),
+                    value: Expr::Value(Value::Null.into())
+                },
+                SqlOption::KeyValue {
+                    key: Ident::new("DATA_RETENTION_TIME_IN_DAYS"),
+                    value: Expr::UnaryOp {
+                        op: UnaryOperator::Minus,
+                        expr: Box::new(Expr::Value(number("1").into())),
+                    }
+                },
+                SqlOption::KeyValue {
+                    key: Ident::new("COMMENT"),
+                    value: Expr::Value(Value::SingleQuotedString("x".into()).into())
+                },
+                SqlOption::KeyValue {
+                    key: Ident::new("COMMENT"),
+                    value: Expr::Value(number("42").into())
+                },
+            ],
+        }]
+    );
+    snowflake()
+        .verified_stmt(r#"ALTER DATABASE "DB_META" SET "COMMENT" = 'x' FUTURE_PROPERTY = false"#);
+    let Statement::AlterDatabase(database) = snowflake().one_statement_parses_to(
+        r#"ALTER DATABASE DB_META UNSET COMMENT /* comma */, -- property
+            DATA_RETENTION_TIME_IN_DAYS, COMMENT;"#,
+        "ALTER DATABASE DB_META UNSET COMMENT, DATA_RETENTION_TIME_IN_DAYS, COMMENT",
+    ) else {
+        panic!("expected ALTER DATABASE");
+    };
+    assert_eq!(
+        database.operations,
+        vec![AlterDatabaseOperation::UnsetOptions {
+            options: vec![
+                Ident::new("COMMENT"),
+                Ident::new("DATA_RETENTION_TIME_IN_DAYS"),
+                Ident::new("COMMENT")
+            ],
+        }]
+    );
+}
+
+#[test]
+fn snowflake_alter_database_options_reject_malformed_and_complex_forms() {
+    use sqlparser::parser::Parser;
+
+    for suffix in [
+        "",
+        "SET",
+        "SET; SELECT 1",
+        "SET ()",
+        "SET (COMMENT = 'x')",
+        "SET OPTIONS (COMMENT = 'x')",
+        "SET , COMMENT = 'x'",
+        "SET COMMENT",
+        "SET COMMENT 'missing equals'",
+        "SET COMMENT =",
+        "SET COMMENT =; SELECT 1",
+        "SET COMMENT = = 'x'",
+        "SET COMMENT = 'unterminated",
+        "SET COMMENT = 'x',",
+        "SET COMMENT = 'x',; SELECT 1",
+        "SET COMMENT = 'x',, COMMENT = 'y'",
+        "SET COMMENT = 'x'COMMENT = 'y'",
+        "SET COMMENT = 1COMMENT = 'y'",
+        "SET COMMENT = 'x' SELECT 1",
+        "SET COMMENT = 'x' UNSET COMMENT",
+        "SET COMMENT = 'x', UNSET COMMENT",
+        "SET COMMENT = concat('a', 'b')",
+        "SET COMMENT = (SELECT 'x')",
+        "SET COMMENT = 'a' || 'b'",
+        "SET COMMENT = 1 + 1",
+        "SET COMMENT = (1)",
+        "SET COMMENT = [1]",
+        "SET COMMENT = DEFAULT",
+        "SET COMMENT = ?",
+        "SET COMMENT = :value",
+        "SET COMMENT = @value",
+        "SET COMMENT = +?",
+        "SET COMMENT = +",
+        "SET COMMENT = -'1'",
+        "SET COMMENT = -NULL",
+        "SET 'COMMENT' = 'x'",
+        "SET TAG t = 'v'",
+        "SET TAG = 'v'",
+        "SET COMMENT = 'x', TAG t = 'v'",
+        "SET CONTACT STEWARD = person",
+        "SET COMMENT = 'x' CONTACT STEWARD = person",
+        "SET FEATURE POLICY policy_name",
+        "UNSET",
+        "UNSET; SELECT 1",
+        "UNSET ()",
+        "UNSET (COMMENT)",
+        "UNSET , COMMENT",
+        "UNSET COMMENT,",
+        "UNSET COMMENT,; SELECT 1",
+        "UNSET COMMENT,, COMMENT",
+        "UNSET COMMENT DATA_RETENTION_TIME_IN_DAYS",
+        "UNSET COMMENT = 'x'",
+        "UNSET COMMENT, DATA_RETENTION_TIME_IN_DAYS = 1",
+        "UNSET 'COMMENT'",
+        "UNSET 1",
+        "UNSET TAG",
+        "UNSET COMMENT, TAG t",
+        "UNSET CONTACT",
+        "UNSET CONTACT STEWARD",
+        "UNSET FEATURE POLICY",
+        "SWAP WITH other",
+        "RENAME TO other",
+        "REFRESH",
+        "ENABLE REPLICATION TO ACCOUNTS other",
+        "DISABLE REPLICATION",
+        "PRIMARY",
+        "SET COMMENT = 'x' CLONE other",
+        "SET COMMENT = 'x' RENAME TO other",
+    ] {
+        let sql = format!("ALTER DATABASE DB_META {suffix}");
+        for trailing_commas in [false, true] {
+            let result = Parser::new(&SnowflakeDialect)
+                .with_options(ParserOptions::new().with_trailing_commas(trailing_commas))
+                .try_with_sql(&sql)
+                .and_then(|mut parser| parser.parse_statements());
+            assert!(result.is_err(), "trailing_commas={trailing_commas}: {sql}");
+        }
+    }
+    for sql in [
+        "ALTER DATABASE IF EXISTS SET COMMENT = 'x'",
+        "ALTER DATABASE IF NOT EXISTS DB_META UNSET COMMENT",
+    ] {
+        assert!(snowflake().parse_sql_statements(sql).is_err(), "{sql}");
+    }
+}
+
+#[test]
+fn snowflake_alter_database_options_are_dialect_gated() {
+    use sqlparser::parser::Parser;
+
+    for dialect in all_dialects().dialects {
+        assert_eq!(
+            dialect.supports_alter_database_options(),
+            dialect.is::<SnowflakeDialect>()
+        );
+        for sql in [
+            "ALTER DATABASE DB_META SET COMMENT = 'x'",
+            "ALTER DATABASE IF EXISTS DB_META_MISSING UNSET COMMENT",
+        ] {
+            assert_eq!(
+                Parser::parse_sql(&*dialect, sql).is_ok(),
+                dialect.is::<SnowflakeDialect>(),
+                "{dialect:?}: {sql}"
+            );
+            let mut parser = Parser::new(&*dialect).try_with_sql(sql).unwrap();
+            assert_eq!(
+                parser.parse_alter_database().is_ok(),
+                dialect.is::<SnowflakeDialect>(),
+                "direct parser: {dialect:?}: {sql}"
+            );
+        }
+    }
+
+    #[derive(Debug)]
+    struct DatabaseOptionsDialect;
+    impl Dialect for DatabaseOptionsDialect {
+        fn is_identifier_start(&self, ch: char) -> bool {
+            ch.is_ascii_alphabetic() || ch == '_'
+        }
+        fn is_identifier_part(&self, ch: char) -> bool {
+            self.is_identifier_start(ch) || ch.is_ascii_digit()
+        }
+        fn supports_alter_database_options(&self) -> bool {
+            true
+        }
+    }
+    assert!(!DatabaseOptionsDialect.supports_alter_schema_options());
+    let sql = "ALTER DATABASE DB_META SET COMMENT = 'x', DATA_RETENTION_TIME_IN_DAYS = -1";
+    assert_eq!(
+        Parser::parse_sql(&DatabaseOptionsDialect, sql).unwrap(),
+        Parser::parse_sql(&SnowflakeDialect, sql).unwrap()
+    );
+}
+
+#[test]
+fn snowflake_alter_database_options_preserve_database_and_schema_boundaries() {
+    let statements = snowflake().parse_sql_statements(
+        r#"ALTER DATABASE "DB_META; DROP DATABASE prod" SET COMMENT = 'x''; DROP DATABASE prod; -- /* */';
+        ALTER SCHEMA DB_META.PUBLIC SET COMMENT = $$x'; -- /* */$$;
+        ALTER DATABASE DB_META UNSET COMMENT;
+        ALTER SCHEMA DB_META.PUBLIC UNSET COMMENT;
+        SELECT status FROM status_log;"#,
+    ).unwrap();
+    assert_eq!(statements.len(), 5);
+    let Statement::AlterDatabase(database) = &statements[0] else {
+        panic!("expected ALTER DATABASE");
+    };
+    assert_eq!(
+        database.name,
+        ObjectName::from(vec![Ident::with_quote('"', "DB_META; DROP DATABASE prod")])
+    );
+    assert_eq!(
+        database.operations,
+        vec![AlterDatabaseOperation::SetOptions {
+            options: vec![SqlOption::KeyValue {
+                key: Ident::new("COMMENT"),
+                value: Expr::Value(
+                    Value::SingleQuotedString("x'; DROP DATABASE prod; -- /* */".into()).into()
+                )
+            }],
+        }]
+    );
+    assert!(matches!(&statements[1], Statement::AlterSchema(_)));
+    assert!(matches!(&statements[2], Statement::AlterDatabase(_)));
+    assert!(matches!(&statements[3], Statement::AlterSchema(_)));
+    assert_eq!(statements[4].to_string(), "SELECT status FROM status_log");
+    for statement in statements {
+        assert_eq!(snowflake().verified_stmt(&statement.to_string()), statement);
+    }
+    all_dialects().verified_stmt("ALTER SCHEMA DB_META.PUBLIC SET OPTIONS (description = 'kept')");
+}
+
+#[test]
+fn snowflake_alter_database_options_spans_and_unconsumed_delimiters() {
+    use sqlparser::parser::Parser;
+
+    for (sql, operation_span, statement_span) in [
+        (
+            r#"ALTER DATABASE DB_META SET
+ COMMENT = 'kept',
+ FLAG = true"#,
+            Span::new(Location::new(2, 2), Location::new(3, 13)),
+            Span::new(Location::new(1, 16), Location::new(3, 13)),
+        ),
+        (
+            r#"ALTER DATABASE DB_META UNSET
+ COMMENT,
+ FLAG"#,
+            Span::new(Location::new(2, 2), Location::new(3, 6)),
+            Span::new(Location::new(1, 16), Location::new(3, 6)),
+        ),
+    ] {
+        let statements = Parser::parse_sql(&SnowflakeDialect, sql).unwrap();
+        let Statement::AlterDatabase(database) = &statements[0] else {
+            panic!("expected ALTER DATABASE");
+        };
+        assert_eq!(database.operations[0].span(), operation_span);
+        assert_eq!(database.span(), statement_span);
+        assert_eq!(statements[0].span(), statement_span);
+    }
+    for suffix in [
+        "SET COMMENT = 'x'",
+        "UNSET COMMENT",
+        "SET",
+        "SET COMMENT",
+        "SET COMMENT =",
+        "SET COMMENT = 'x',",
+        "UNSET",
+        "UNSET COMMENT,",
+    ] {
+        let sql = format!("ALTER DATABASE DB_META {suffix}; SELECT 1");
+        let mut parser = Parser::new(&SnowflakeDialect).try_with_sql(&sql).unwrap();
+        assert_eq!(
+            parser.parse_alter_database().is_ok(),
+            matches!(suffix, "SET COMMENT = 'x'" | "UNSET COMMENT")
+        );
+        assert_eq!(parser.peek_token_ref().token, Token::SemiColon, "{sql}");
+    }
+}
+
+#[cfg(all(feature = "serde", feature = "serde_json"))]
+#[test]
+fn snowflake_alter_database_options_serde_round_trip() {
+    for (sql, variant) in [
+        (
+            "ALTER DATABASE IF EXISTS DB_META SET COMMENT = NULL COMMENT = 'kept'",
+            "SetOptions",
+        ),
+        (
+            "ALTER DATABASE DB_META UNSET COMMENT, COMMENT",
+            "UnsetOptions",
+        ),
+    ] {
+        let statement = snowflake().verified_stmt(sql);
+        let encoded = serde_json::to_value(&statement).unwrap();
+        assert!(encoded["AlterDatabase"]["operations"][0][variant]["options"].is_array());
+        assert_eq!(
+            serde_json::from_value::<Statement>(encoded).unwrap(),
+            statement
+        );
+    }
+}
+
+#[cfg(feature = "visitor")]
+#[test]
+fn snowflake_alter_database_options_visitors_do_not_treat_names_as_relations() {
+    use core::ops::ControlFlow;
+    use sqlparser::ast::{visit_expressions, visit_expressions_mut, visit_relations};
+
+    let mut statement = snowflake().verified_stmt(
+        "ALTER DATABASE DB_META SET COMMENT = 'kept' DATA_RETENTION_TIME_IN_DAYS = -1",
+    );
+    let mut expressions = Vec::new();
+    let result = visit_expressions(&statement, |expr| {
+        expressions.push(expr.to_string());
+        ControlFlow::<()>::Continue(())
+    });
+    assert_eq!(result, ControlFlow::Continue(()));
+    assert_eq!(expressions, vec!["'kept'", "-1", "1"]);
+    let result = visit_expressions_mut(&mut statement, |expr| {
+        if let Expr::Value(ValueWithSpan {
+            value: Value::SingleQuotedString(value),
+            ..
+        }) = expr
+        {
+            *value = "changed".into();
+        }
+        ControlFlow::<()>::Continue(())
+    });
+    assert_eq!(result, ControlFlow::Continue(()));
+    assert_eq!(
+        statement.to_string(),
+        "ALTER DATABASE DB_META SET COMMENT = 'changed' DATA_RETENTION_TIME_IN_DAYS = -1"
+    );
+    let unset = snowflake().verified_stmt("ALTER DATABASE DB_META UNSET COMMENT, COMMENT");
+    assert_eq!(
+        visit_expressions(&unset, |_| ControlFlow::Break("unexpected expression")),
+        ControlFlow::Continue(())
+    );
+    for statement in [statement, unset] {
+        assert_eq!(
+            visit_relations(&statement, |_| ControlFlow::Break("unexpected relation")),
+            ControlFlow::Continue(())
+        );
+    }
+}

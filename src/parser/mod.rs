@@ -10770,6 +10770,10 @@ impl<'a> Parser<'a> {
 
     /// Parse an `ALTER <object>` statement and dispatch to the appropriate alter handler.
     pub fn parse_alter(&mut self) -> Result<Statement, ParserError> {
+        if self.peek_keyword(Keyword::DATABASE) && self.dialect.supports_alter_database_options() {
+            self.prev_token();
+            return self.parse_alter_database();
+        }
         let object_type = self.expect_one_of_keywords(&[
             Keyword::VIEW,
             Keyword::TYPE,
@@ -11543,6 +11547,34 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parse a native `ALTER DATABASE` primitive property statement.
+    pub fn parse_alter_database(&mut self) -> Result<Statement, ParserError> {
+        if !self.dialect.supports_alter_database_options() {
+            return self.expected_ref(
+                "dialect supporting ALTER DATABASE properties",
+                self.peek_token_ref(),
+            );
+        }
+        self.expect_keywords(&[Keyword::ALTER, Keyword::DATABASE])?;
+        let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
+        let name = self.parse_object_name(false)?;
+        let operation = if self.parse_keyword(Keyword::SET) {
+            let options = self.parse_alter_namespace_set_options("database")?;
+            AlterDatabaseOperation::SetOptions { options }
+        } else if self.parse_keyword(Keyword::UNSET) {
+            let options = self.parse_alter_namespace_unset_options("database")?;
+            AlterDatabaseOperation::UnsetOptions { options }
+        } else {
+            return self.expected_ref("ALTER DATABASE property operation", self.peek_token_ref());
+        };
+        Ok(AlterDatabase {
+            name,
+            if_exists,
+            operations: vec![operation],
+        }
+        .into())
+    }
+
     /// Parse an `ALTER SCHEMA` statement.
     ///
     /// Supports operations such as setting options, renaming, adding/dropping replicas, and changing owner.
@@ -11575,18 +11607,11 @@ impl<'a> Parser<'a> {
             let owner = self.parse_owner()?;
             AlterSchemaOperation::OwnerTo { owner }
         } else if self.dialect.supports_alter_schema_options() && self.parse_keyword(Keyword::SET) {
-            let options = self.parse_alter_schema_set_options()?;
+            let options = self.parse_alter_namespace_set_options("schema")?;
             AlterSchemaOperation::SetOptions { options }
         } else if self.dialect.supports_alter_schema_options() && self.parse_keyword(Keyword::UNSET)
         {
-            let options = self.parse_comma_separated_with_trailing_commas(
-                Self::parse_alter_schema_option_name,
-                false,
-                Self::is_reserved_for_column_alias,
-            )?;
-            if !matches!(self.peek_token_ref().token, Token::EOF | Token::SemiColon) {
-                return self.expected_ref("comma or statement end", self.peek_token_ref());
-            }
+            let options = self.parse_alter_namespace_unset_options("schema")?;
             AlterSchemaOperation::UnsetOptions { options }
         } else {
             return self.expected_ref("ALTER SCHEMA operation", self.peek_token_ref());
@@ -11598,21 +11623,45 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_alter_schema_option_name(&mut self) -> Result<Ident, ParserError> {
+    fn parse_alter_namespace_option_name(
+        &mut self,
+        object_type: &str,
+    ) -> Result<Ident, ParserError> {
         if !matches!(self.peek_token_ref().token, Token::Word(_))
             || self
                 .peek_one_of_keywords(&[Keyword::TAG, Keyword::CONTACT])
                 .is_some()
         {
-            return self.expected_ref("primitive schema property name", self.peek_token_ref());
+            return self.expected_ref(
+                &format!("primitive {object_type} property name"),
+                self.peek_token_ref(),
+            );
         }
         self.parse_identifier()
     }
 
-    fn parse_alter_schema_set_options(&mut self) -> Result<Vec<SqlOption>, ParserError> {
+    fn parse_alter_namespace_unset_options(
+        &mut self,
+        object_type: &str,
+    ) -> Result<Vec<Ident>, ParserError> {
+        let options = self.parse_comma_separated_with_trailing_commas(
+            |parser| parser.parse_alter_namespace_option_name(object_type),
+            false,
+            Self::is_reserved_for_column_alias,
+        )?;
+        if !matches!(self.peek_token_ref().token, Token::EOF | Token::SemiColon) {
+            return self.expected_ref("comma or statement end", self.peek_token_ref());
+        }
+        Ok(options)
+    }
+
+    fn parse_alter_namespace_set_options(
+        &mut self,
+        object_type: &str,
+    ) -> Result<Vec<SqlOption>, ParserError> {
         let mut options = Vec::new();
         loop {
-            let key = self.parse_alter_schema_option_name()?;
+            let key = self.parse_alter_namespace_option_name(object_type)?;
             self.expect_token(&Token::Eq)?;
             let value = match self.peek_token_ref().token {
                 Token::Plus | Token::Minus
@@ -11626,8 +11675,10 @@ impl<'a> Parser<'a> {
                 | Token::Placeholder(_)
                 | Token::Colon
                 | Token::AtSign => {
-                    return self
-                        .expected_ref("primitive schema property literal", self.peek_token_ref());
+                    return self.expected_ref(
+                        &format!("primitive {object_type} property literal"),
+                        self.peek_token_ref(),
+                    );
                 }
                 _ => Expr::Value(self.parse_value()?),
             };
@@ -11645,7 +11696,7 @@ impl<'a> Parser<'a> {
                 Token::Word(_) if space_separated => {}
                 _ => {
                     return self.expected_ref(
-                        "schema property separator or statement end",
+                        &format!("{object_type} property separator or statement end"),
                         self.peek_token_ref(),
                     )
                 }
