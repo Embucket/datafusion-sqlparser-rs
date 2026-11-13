@@ -5208,6 +5208,18 @@ impl<'a> Parser<'a> {
             self.parse_create_index(true).map(Into::into)
         } else if self.parse_keyword(Keyword::VIRTUAL) {
             self.parse_create_virtual_table()
+        } else if self.peek_keyword(Keyword::SCHEMA)
+            && (or_alter
+                || global.is_some()
+                || transient
+                || temporary
+                || persistent
+                || create_view_params.is_some())
+        {
+            self.expected_ref(
+                "an object type supporting the CREATE modifiers",
+                self.peek_token_ref(),
+            )
         } else if self.parse_keyword(Keyword::SCHEMA) {
             self.parse_create_schema()
         } else if self.parse_keyword(Keyword::DATABASE) {
@@ -5476,6 +5488,22 @@ impl<'a> Parser<'a> {
             None
         };
 
+        let mut schema_options = Vec::new();
+        if self.dialect.supports_create_schema_options() {
+            while self
+                .peek_one_of_keywords(&[Keyword::COMMENT, Keyword::DATA_RETENTION_TIME_IN_DAYS])
+                .is_some()
+            {
+                let key = self.parse_identifier()?;
+                self.expect_token(&Token::Eq)?;
+                let value = match self.peek_token_ref().token {
+                    Token::Number(..) | Token::Plus | Token::Minus => self.parse_number()?,
+                    _ => Expr::Value(self.parse_value()?),
+                };
+                schema_options.push(SqlOption::KeyValue { key, value });
+            }
+        }
+
         Ok(Statement::CreateSchema {
             schema_name,
             if_not_exists,
@@ -5483,6 +5511,7 @@ impl<'a> Parser<'a> {
             options,
             default_collate_spec,
             clone,
+            schema_options,
         })
     }
 
