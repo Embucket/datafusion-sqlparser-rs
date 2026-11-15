@@ -2237,6 +2237,12 @@ pub struct ConstraintCharacteristics {
     pub initially: Option<DeferrableInitial>,
     /// `[ ENFORCED | NOT ENFORCED ]`
     pub enforced: Option<bool>,
+    /// `[ RELY | NORELY ]`. Syntax only; the consumer decides whether to trust it.
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub rely: Option<bool>,
 }
 
 /// Initial setting for deferrable constraints (`INITIALLY IMMEDIATE` or `INITIALLY DEFERRED`).
@@ -2299,7 +2305,14 @@ impl fmt::Display for ConstraintCharacteristics {
             (Some(deferrable), Some(initial), Some(enforced)) => {
                 write!(f, "{deferrable} {initial} {enforced}")
             }
+        }?;
+        if let Some(rely) = self.rely {
+            if deferrable.is_some() || initially_immediate.is_some() || enforced.is_some() {
+                write!(f, " ")?;
+            }
+            write!(f, "{}", if rely { "RELY" } else { "NORELY" })?;
         }
+        Ok(())
     }
 }
 

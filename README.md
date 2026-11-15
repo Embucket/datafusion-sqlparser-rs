@@ -133,6 +133,19 @@ complete Snowflake workflow. In particular, path traversal/backslash admission,
 remain semantic responsibilities. These additions require owning qualification;
 source tests alone do not establish runtime or reference parity.
 
+## Snowflake constraint reliance
+
+Snowflake and generic dialects retain `RELY`/`NORELY` on informational key
+declarations as `ConstraintCharacteristics::rely: Option<bool>`. For example,
+`CREATE TABLE NE (ID INT PRIMARY KEY NOT ENFORCED RELY)` keeps enforcement and
+reliance as separate fields and round-trips both clauses. Duplicate or conflicting
+reliance clauses are syntax errors. Other dialects retain their existing grammar.
+
+This is an additive public AST field: consumers constructing characteristics must
+initialize it. Old serialized characteristics omit it and deserialize as `None`;
+serializing `None` preserves the old shape. The parser does not infer constraint
+enforcement, optimizer trust, privileges or engine execution support.
+
 ## Preserves Syntax Round Trip
 
 This crate allows users to recover the original SQL text (with comments removed,

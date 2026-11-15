@@ -234,6 +234,10 @@ impl Dialect for SnowflakeDialect {
         true
     }
 
+    fn supports_constraint_reliance(&self) -> bool {
+        true
+    }
+
     /// See [doc](https://docs.snowflake.com/en/sql-reference/functions/extract)
     fn supports_extract_comma_syntax(&self) -> bool {
         true

@@ -297,6 +297,10 @@ impl Dialect for GenericDialect {
         true
     }
 
+    fn supports_constraint_reliance(&self) -> bool {
+        true
+    }
+
     fn supports_key_column_option(&self) -> bool {
         true
     }
