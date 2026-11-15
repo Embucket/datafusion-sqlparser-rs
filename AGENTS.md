@@ -58,6 +58,12 @@ perform storage IO, evaluate options, or enforce an engine's transfer policy.
 You can try to simplify the SQL statement to identify the root cause of the parsing issue. This may involve removing certain clauses or components of the SQL statement to see if it can be parsed successfully. Additionally, you can compare the problematic SQL statement with similar statements that are parsed correctly to identify any differences that may be causing the issue.
 
 ## Pre Commit Checks
+
+Snowflake key reliance has its own optional `ConstraintCharacteristics::rely` field
+and `Dialect::supports_constraint_reliance` capability. Keep RELY/NORELY distinct
+from enforcement and deferrability, preserve absent-field serde compatibility and
+statement boundaries, and never infer optimizer or execution semantics from syntax.
+
 Run the following commands before you commit to ensure the change will pass the CI process:
 ```bash
 cargo test --all-features

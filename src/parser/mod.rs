@@ -9742,7 +9742,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse optional constraint characteristics such as `DEFERRABLE`, `INITIALLY` and `ENFORCED`.
+    /// Parse optional constraint characteristics, including dialect-supported `RELY`/`NORELY`.
     pub fn parse_constraint_characteristics(
         &mut self,
     ) -> Result<Option<ConstraintCharacteristics>, ParserError> {
@@ -9768,12 +9768,26 @@ impl<'a> Parser<'a> {
                 && self.parse_keywords(&[Keyword::NOT, Keyword::ENFORCED])
             {
                 cc.enforced = Some(false);
+            } else if cc.rely.is_none()
+                && self.dialect.supports_constraint_reliance()
+                && self.parse_keyword(Keyword::RELY)
+            {
+                cc.rely = Some(true);
+            } else if cc.rely.is_none()
+                && self.dialect.supports_constraint_reliance()
+                && self.parse_keyword(Keyword::NORELY)
+            {
+                cc.rely = Some(false);
             } else {
                 break;
             }
         }
 
-        if cc.deferrable.is_some() || cc.initially.is_some() || cc.enforced.is_some() {
+        if cc.deferrable.is_some()
+            || cc.initially.is_some()
+            || cc.enforced.is_some()
+            || cc.rely.is_some()
+        {
             Ok(Some(cc))
         } else {
             Ok(None)

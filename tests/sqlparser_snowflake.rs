@@ -7068,6 +7068,92 @@ fn snowflake_create_schema_options_serde_round_trip_and_default() {
     assert_eq!(serde_json::from_value::<Statement>(old).unwrap(), plain);
 }
 
+#[test]
+fn snowflake_constraint_reliance_round_trips() {
+    for sql in [
+        "CREATE TABLE NE (ID INT PRIMARY KEY NOT ENFORCED RELY)",
+        "CREATE TABLE t (id INT PRIMARY KEY NORELY)",
+        "CREATE TABLE t (id INT UNIQUE RELY)",
+        "CREATE TABLE t (id INT REFERENCES parent (id) NOT ENFORCED RELY)",
+        "CREATE TABLE t (id INT, PRIMARY KEY (id) RELY)",
+        "CREATE TABLE t (id INT, CONSTRAINT uk UNIQUE (id) NOT ENFORCED NORELY)",
+        "CREATE TABLE t (id INT, FOREIGN KEY (id) REFERENCES parent(id) RELY)",
+    ] {
+        snowflake_and_generic().verified_stmt(sql);
+    }
+}
+
+#[test]
+fn snowflake_constraint_reliance_preserves_statement_boundaries() {
+    let statements = sqlparser::parser::Parser::parse_sql(
+        &SnowflakeDialect {},
+        "CREATE TABLE t (id INT PRIMARY KEY NOT ENFORCED RELY); SELECT 1",
+    )
+    .unwrap();
+    assert_eq!(statements.len(), 2);
+    assert!(matches!(statements[1], Statement::Query(_)));
+    for sql in [
+        "CREATE TABLE t (id INT PRIMARY KEY RELY RELY)",
+        "CREATE TABLE t (id INT PRIMARY KEY RELY NORELY)",
+        "CREATE TABLE t (id INT PRIMARY KEY NORELY RELY)",
+        "CREATE TABLE t (id INT PRIMARY KEY NOT RELY)",
+    ] {
+        assert!(sqlparser::parser::Parser::parse_sql(&SnowflakeDialect {}, sql).is_err());
+    }
+}
+
+#[test]
+fn snowflake_constraint_reliance_does_not_change_quoted_identifiers_or_other_dialects() {
+    snowflake_and_generic().verified_stmt(r#"CREATE TABLE "RELY" ("NORELY" INT PRIMARY KEY)"#);
+    assert!(sqlparser::parser::Parser::parse_sql(
+        &sqlparser::dialect::PostgreSqlDialect {},
+        "CREATE TABLE t (id INT PRIMARY KEY RELY)",
+    )
+    .is_err());
+}
+
+#[test]
+fn snowflake_constraint_reliance_has_its_own_typed_characteristic() {
+    for (suffix, expected) in [("RELY", true), ("NORELY", false)] {
+        let sql = format!("CREATE TABLE t (id INT PRIMARY KEY NOT ENFORCED {suffix})");
+        let Statement::CreateTable(create) = snowflake_and_generic().verified_stmt(&sql) else {
+            panic!("expected CREATE TABLE");
+        };
+        let ColumnOption::PrimaryKey(key) = &create.columns[0].options[0].option else {
+            panic!("expected inline primary key");
+        };
+        assert_eq!(
+            key.characteristics,
+            Some(ConstraintCharacteristics {
+                enforced: Some(false),
+                rely: Some(expected),
+                ..Default::default()
+            })
+        );
+    }
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn snowflake_constraint_reliance_preserves_old_serde_shape() {
+    let old = serde_json::json!({"deferrable": null, "initially": null, "enforced": false});
+    let characteristics: ConstraintCharacteristics = serde_json::from_value(old.clone()).unwrap();
+    assert_eq!(characteristics.rely, None);
+    assert_eq!(serde_json::to_value(characteristics).unwrap(), old);
+    for rely in [true, false] {
+        let with_reliance = ConstraintCharacteristics {
+            rely: Some(rely),
+            ..characteristics
+        };
+        let serialized = serde_json::to_value(with_reliance).unwrap();
+        assert_eq!(serialized["rely"], rely);
+        assert_eq!(
+            serde_json::from_value::<ConstraintCharacteristics>(serialized).unwrap(),
+            with_reliance
+        );
+    }
+}
+
 #[cfg(feature = "visitor")]
 #[test]
 fn snowflake_create_schema_options_expose_literal_expressions_to_visitors() {

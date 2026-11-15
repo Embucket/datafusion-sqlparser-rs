@@ -1323,6 +1323,12 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Supports the `RELY` and `NORELY` constraint characteristics.
+    /// These record syntax without inferring enforcement or optimizer behavior.
+    fn supports_constraint_reliance(&self) -> bool {
+        false
+    }
+
     /// Returns true if the dialect supports the `KEY` keyword as part of
     /// column-level constraints in a `CREATE TABLE` statement.
     ///
