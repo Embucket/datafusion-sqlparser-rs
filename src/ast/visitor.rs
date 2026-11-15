@@ -17,7 +17,10 @@
 
 //! Recursive visitors for ast Nodes. See [`Visitor`] for more details.
 
-use crate::ast::{Expr, ObjectName, Query, Select, Statement, TableFactor, ValueWithSpan};
+use crate::ast::{
+    ConstraintCharacteristics, Expr, ObjectName, Query, Select, Statement, TableFactor,
+    ValueWithSpan,
+};
 use core::ops::ControlFlow;
 
 /// A type that can be visited by a [`Visitor`]. See [`Visitor`] for
@@ -197,6 +200,22 @@ pub trait Visitor {
     /// boxing it with `Box` to minimize stack usage.
     type Break;
 
+    /// Invoked for constraint characteristics before visiting their children.
+    fn pre_visit_constraint_characteristics(
+        &mut self,
+        _characteristics: &ConstraintCharacteristics,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
+
+    /// Invoked for constraint characteristics after visiting their children.
+    fn post_visit_constraint_characteristics(
+        &mut self,
+        _characteristics: &ConstraintCharacteristics,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
+
     /// Invoked for any queries that appear in the AST before visiting children
     fn pre_visit_query(&mut self, _query: &Query) -> ControlFlow<Self::Break> {
         ControlFlow::Continue(())
@@ -318,6 +337,22 @@ pub trait VisitorMut {
     /// stack overflow during recursion. If you need to return an error, consider
     /// boxing it with `Box` to minimize stack usage.
     type Break;
+
+    /// Invoked for constraint characteristics before visiting their children.
+    fn pre_visit_constraint_characteristics(
+        &mut self,
+        _characteristics: &mut ConstraintCharacteristics,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
+
+    /// Invoked for constraint characteristics after visiting their children.
+    fn post_visit_constraint_characteristics(
+        &mut self,
+        _characteristics: &mut ConstraintCharacteristics,
+    ) -> ControlFlow<Self::Break> {
+        ControlFlow::Continue(())
+    }
 
     /// Invoked for any queries that appear in the AST before visiting children
     fn pre_visit_query(&mut self, _query: &mut Query) -> ControlFlow<Self::Break> {
@@ -700,6 +735,10 @@ where
     v.visit(&mut StatementVisitor(f))?;
     ControlFlow::Continue(())
 }
+
+#[cfg(test)]
+#[path = "visitor_constraint_characteristics_tests.rs"]
+mod constraint_characteristics_tests;
 
 #[cfg(test)]
 mod tests {

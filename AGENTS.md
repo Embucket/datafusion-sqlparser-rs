@@ -64,6 +64,12 @@ and `Dialect::supports_constraint_reliance` capability. Keep RELY/NORELY distinc
 from enforcement and deferrability, preserve absent-field serde compatibility and
 statement boundaries, and never infer optimizer or execution semantics from syntax.
 
+Constraint-characteristics visitor hooks belong on the native characteristics
+type, covering every derived placement without a container-specific inventory.
+Preserve default-Continue behavior, early-break propagation, mutable hooks and
+the actual borrowed instance; traversal must not clone characteristics or infer
+constraint semantics.
+
 Run the following commands before you commit to ensure the change will pass the CI process:
 ```bash
 cargo test --all-features

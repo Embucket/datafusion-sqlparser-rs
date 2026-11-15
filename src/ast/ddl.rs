@@ -2230,6 +2230,7 @@ pub(crate) fn display_option_spaced<T: fmt::Display>(option: &Option<T>) -> impl
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Default, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+#[cfg_attr(feature = "visitor", visit(with = "visit_constraint_characteristics"))]
 pub struct ConstraintCharacteristics {
     /// `[ DEFERRABLE | NOT DEFERRABLE ]`
     pub deferrable: Option<bool>,
