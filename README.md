@@ -85,6 +85,12 @@ The following optional [crate  features](https://doc.rust-lang.org/cargo/referen
 * `visitor`: Adds a `Visitor` capable of recursively walking the AST tree.
 * `recursive-protection` (enabled by default), uses [recursive](https://docs.rs/recursive/latest/recursive/) for stack overflow protection. 
 
+`Visitor` and `VisitorMut` expose pre/post hooks for each native
+`ConstraintCharacteristics` instance, including characteristics nested in view
+columns, domains, Hive definitions and triggers. Existing visitors default to
+continuing traversal; hooks may stop it with `ControlFlow::Break`. These callbacks
+add no constraint execution or optimizer semantics and change no serialized AST.
+
 ## Syntax vs Semantics
 
 This crate provides only a syntax parser, and tries to avoid applying
