@@ -146,6 +146,14 @@ initialize it. Old serialized characteristics omit it and deserialize as `None`;
 serializing `None` preserves the old shape. The parser does not infer constraint
 enforcement, optimizer trust, privileges or engine execution support.
 
+The selected runtime source `05e0803b` has local all-feature qualification:
+1,630 tests pass, zero fail and seven existing tests remain ignored, including
+47 documentation tests. Configured Rust 1.89 all-target/all-feature Clippy and
+format checks pass. The test-first baseline has two reliance failures and one
+unchanged control pass; a later foreign-key test corrects only its existing
+canonical whitespace expectation. Rustice still needs its consumer/pin and owning
+runtime qualification before this grammar can close an engine compatibility gap.
+
 ## Preserves Syntax Round Trip
 
 This crate allows users to recover the original SQL text (with comments removed,
