@@ -25,7 +25,7 @@ use sqlparser::ast::helpers::stmt_data_loading::{
 };
 use sqlparser::ast::*;
 use sqlparser::dialect::{Dialect, GenericDialect, SnowflakeDialect};
-use sqlparser::parser::{ParserError, ParserOptions};
+use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::*;
 use test_utils::*;
 
@@ -8375,4 +8375,54 @@ fn snowflake_create_schema_modifiers_serde_round_trip_and_old_ast_defaults() {
         );
     }
     assert_eq!(serde_json::from_value::<Statement>(old).unwrap(), plain);
+}
+
+#[test]
+fn snowflake_copy_preserves_statement_delimiters() {
+    for sql in [
+        "COPY INTO target FROM @source",
+        "COPY INTO @target FROM (SELECT 1)",
+        "COPY INTO @target FROM (SELECT ';' AS value) VALIDATION_MODE = RETURN_ROWS",
+    ] {
+        let copy = snowflake().verified_stmt(sql);
+        let batch = format!("{sql}; SELECT 2");
+        let mut parser = Parser::new(&SnowflakeDialect).try_with_sql(&batch).unwrap();
+        assert_eq!(parser.parse_statement().unwrap(), copy);
+        assert_eq!(parser.peek_token_ref().token, Token::SemiColon);
+        assert_eq!(
+            Parser::parse_sql(&SnowflakeDialect, &batch).unwrap(),
+            vec![copy.clone(), snowflake().verified_stmt("SELECT 2")]
+        );
+        for batch in [format!("{sql}; {sql};"), format!("{sql};; {sql}")] {
+            let statements = Parser::parse_sql(&SnowflakeDialect, &batch).unwrap();
+            assert_eq!(statements, vec![copy.clone(), copy.clone()]);
+            let rendered = statements
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("; ");
+            assert_eq!(
+                Parser::parse_sql(&SnowflakeDialect, &rendered).unwrap(),
+                statements
+            );
+        }
+        assert_eq!(
+            Parser::parse_sql(&SnowflakeDialect, &format!("{sql};")).unwrap(),
+            vec![copy]
+        );
+    }
+}
+
+#[test]
+fn snowflake_copy_batches_reject_missing_delimiters_and_malformed_suffixes() {
+    let copy = "COPY INTO @target FROM (SELECT 1) VALIDATION_MODE = RETURN_ROWS";
+    assert_eq!(
+        Parser::parse_sql(&SnowflakeDialect, &format!("{copy}; SELECT")).unwrap_err(),
+        ParserError::ParserError("Expected: an expression, found: EOF".to_owned())
+    );
+    let error = Parser::parse_sql(&SnowflakeDialect, &format!("{copy} SELECT 2")).unwrap_err();
+    assert!(
+        error.to_string().contains("Expected: =, found: 2"),
+        "{error}"
+    );
 }
