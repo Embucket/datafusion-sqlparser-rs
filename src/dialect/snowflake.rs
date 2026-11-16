@@ -1795,8 +1795,8 @@ pub fn parse_stage_name_identifier(parser: &mut Parser) -> Result<Ident, ParserE
     let mut ident = String::new();
     while let Some(next_token) = parser.next_token_no_skip() {
         match &next_token.token {
-            Token::Whitespace(_) | Token::SemiColon => break,
-            Token::Period => {
+            Token::Whitespace(_) => break,
+            Token::SemiColon | Token::Period => {
                 parser.prev_token();
                 break;
             }
@@ -1971,7 +1971,11 @@ pub fn parse_copy_into(parser: &mut Parser) -> Result<Statement, ParserError> {
             copy_options = parser.parse_key_value_options(true, &[])?.options;
         } else {
             match parser.next_token().token {
-                Token::SemiColon | Token::EOF => break,
+                Token::SemiColon => {
+                    parser.prev_token();
+                    break;
+                }
+                Token::EOF => break,
                 Token::Comma => continue,
                 // In `COPY INTO <location>` the copy options do not have a shared key
                 // like in `COPY INTO <table>`
