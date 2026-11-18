@@ -139,6 +139,20 @@ complete Snowflake workflow. In particular, path traversal/backslash admission,
 remain semantic responsibilities. These additions require owning qualification;
 source tests alone do not establish runtime or reference parity.
 
+## Snowflake table description output
+
+`DESC | DESCRIBE TABLE <name> TYPE = COLUMNS | STAGE` retains the explicit
+selection in `Statement::ExplainTable::describe_type`. `None` preserves the
+ordinary description; `Some(DescribeTableType::Columns)` and `Stage` remain
+distinct AST values and round-trip their SQL. This suffix is Snowflake-only
+and does not extend `EXPLAIN`, `DESCRIBE VIEW` or namespace descriptions.
+
+The additive public AST field must be initialized by constructors. Old serialized
+nodes deserialize with `None`, and serializing `None` preserves their shape.
+Execution consumers matching with `..` must handle or explicitly reject the
+selected mode: parser acceptance does not implement table stage metadata or
+qualify a DataFusion/Rustice dependency update.
+
 ## Snowflake constraint reliance
 
 Snowflake and generic dialects retain `RELY`/`NORELY` on informational key

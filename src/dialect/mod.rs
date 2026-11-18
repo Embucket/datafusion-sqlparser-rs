@@ -1028,6 +1028,11 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Supports `DESCRIBE TABLE <name> TYPE = COLUMNS | STAGE`.
+    fn supports_describe_table_type(&self) -> bool {
+        false
+    }
+
     /// Returns true if this dialect allows the `EXTRACT` function to words other than [`Keyword`].
     fn allow_extract_custom(&self) -> bool {
         false

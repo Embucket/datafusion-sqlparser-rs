@@ -14350,11 +14350,28 @@ impl<'a> Parser<'a> {
                     && self.parse_keyword(Keyword::VIEW);
 
                 let table_name = self.parse_object_name(false)?;
+                let describe_type = if describe_alias != DescribeAlias::Explain
+                    && has_table_keyword
+                    && self.dialect.supports_describe_table_type()
+                    && self.parse_keyword(Keyword::TYPE)
+                {
+                    self.expect_token(&Token::Eq)?;
+                    Some(
+                        match self.parse_one_of_keywords(&[Keyword::COLUMNS, Keyword::STAGE]) {
+                            Some(Keyword::COLUMNS) => DescribeTableType::Columns,
+                            Some(Keyword::STAGE) => DescribeTableType::Stage,
+                            _ => return self.expected("COLUMNS or STAGE", self.peek_token()),
+                        },
+                    )
+                } else {
+                    None
+                };
                 Ok(Statement::ExplainTable {
                     describe_alias,
                     hive_format,
                     has_table_keyword,
                     has_view_keyword,
+                    describe_type,
                     table_name,
                 })
             }
