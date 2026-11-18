@@ -1746,12 +1746,14 @@ fn parse_explain_table() {
             hive_format,
             has_table_keyword,
             has_view_keyword,
+            describe_type,
             table_name,
         } => {
             pretty_assertions::assert_eq!(describe_alias, DescribeAlias::Explain);
             pretty_assertions::assert_eq!(hive_format, None);
             pretty_assertions::assert_eq!(has_table_keyword, true);
             pretty_assertions::assert_eq!(has_view_keyword, false);
+            pretty_assertions::assert_eq!(describe_type, None);
             pretty_assertions::assert_eq!("test_identifier", table_name.to_string());
         }
         _ => panic!("Unexpected Statement, must be ExplainTable"),

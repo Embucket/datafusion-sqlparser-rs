@@ -3543,12 +3543,14 @@ fn parse_explain_table() {
             hive_format,
             has_table_keyword,
             has_view_keyword,
+            describe_type,
             table_name,
         } => {
             assert_eq!(describe_alias, DescribeAlias::Explain);
             assert_eq!(hive_format, None);
             assert_eq!(has_table_keyword, true);
             assert_eq!(has_view_keyword, false);
+            assert_eq!(describe_type, None);
             assert_eq!("test_identifier", table_name.to_string());
         }
         _ => panic!("Unexpected Statement, must be ExplainTable"),
@@ -3563,12 +3565,14 @@ fn parse_describe_view() {
             hive_format,
             has_table_keyword,
             has_view_keyword,
+            describe_type,
             table_name,
         } => {
             assert_eq!(describe_alias, DescribeAlias::Describe);
             assert_eq!(hive_format, None);
             assert!(!has_table_keyword);
             assert!(has_view_keyword);
+            assert_eq!(describe_type, None);
             assert_eq!("test_view", table_name.to_string());
         }
         _ => panic!("Unexpected Statement, must be ExplainTable"),
@@ -8425,4 +8429,151 @@ fn snowflake_copy_batches_reject_missing_delimiters_and_malformed_suffixes() {
         error.to_string().contains("Expected: =, found: 2"),
         "{error}"
     );
+}
+
+#[test]
+fn describe_table_type_keeps_explicit_selection_and_names() {
+    for (alias, expected_alias) in [
+        ("DESC", DescribeAlias::Desc),
+        ("DESCRIBE", DescribeAlias::Describe),
+    ] {
+        for name in ["t", "db.app.t", r#""Db.With.Dots"."Schema"."TYPE""#] {
+            for (selection, expected) in [
+                ("COLUMNS", DescribeTableType::Columns),
+                ("STAGE", DescribeTableType::Stage),
+            ] {
+                let sql = format!("{alias} TABLE {name} TYPE = {selection}");
+                let Statement::ExplainTable {
+                    describe_alias,
+                    hive_format,
+                    has_table_keyword,
+                    has_view_keyword,
+                    describe_type,
+                    table_name,
+                } = snowflake().verified_stmt(&sql)
+                else {
+                    panic!("expected table description");
+                };
+                assert_eq!(describe_alias, expected_alias);
+                assert_eq!(hive_format, None);
+                assert!(has_table_keyword);
+                assert!(!has_view_keyword);
+                assert_eq!(describe_type, Some(expected));
+                assert_eq!(table_name.to_string(), name);
+            }
+        }
+    }
+    snowflake().one_statement_parses_to("desc table t type=columns", "DESC TABLE t TYPE = COLUMNS");
+    assert_ne!(
+        snowflake().verified_stmt("DESC TABLE t"),
+        snowflake().verified_stmt("DESC TABLE t TYPE = COLUMNS"),
+    );
+}
+
+#[test]
+fn describe_table_type_requires_equals_and_known_selection() {
+    for (sql, expected) in [
+        ("DESC TABLE t TYPE", "Expected: =, found: EOF"),
+        ("DESC TABLE t TYPE COLUMNS", "Expected: =, found: COLUMNS"),
+        (
+            "DESC TABLE t TYPE =",
+            "Expected: COLUMNS or STAGE, found: EOF",
+        ),
+        (
+            "DESC TABLE t TYPE = INVALID",
+            "Expected: COLUMNS or STAGE, found: INVALID",
+        ),
+        (
+            "DESC TABLE t TYPE = 'COLUMNS'",
+            "Expected: COLUMNS or STAGE, found: 'COLUMNS'",
+        ),
+        (
+            r#"DESC TABLE t TYPE = "STAGE""#,
+            "Expected: COLUMNS or STAGE, found: \"STAGE\"",
+        ),
+    ] {
+        assert_eq!(
+            snowflake().parse_sql_statements(sql).unwrap_err(),
+            ParserError::ParserError(expected.into()),
+        );
+    }
+}
+
+#[test]
+fn describe_table_type_preserves_dialect_and_statement_boundaries() {
+    for sql in [
+        "EXPLAIN TABLE t TYPE = COLUMNS",
+        "DESCRIBE VIEW v TYPE = COLUMNS",
+        "DESCRIBE DATABASE d TYPE = COLUMNS",
+        "DESCRIBE SCHEMA s TYPE = COLUMNS",
+        "DESC t TYPE = COLUMNS",
+        "DESC TABLE t TYPE = COLUMNS TYPE = STAGE",
+        "DESC TABLE t TYPE = STAGE SELECT 1",
+    ] {
+        assert!(snowflake().parse_sql_statements(sql).is_err(), "{sql}");
+    }
+    all_dialects_where(|dialect| !dialect.supports_describe_table_type())
+        .parse_sql_statements("DESC TABLE t TYPE = COLUMNS")
+        .unwrap_err();
+    let sql = "DESC TABLE t TYPE = STAGE; SELECT 1";
+    let mut parser = Parser::new(&SnowflakeDialect).try_with_sql(sql).unwrap();
+    assert_eq!(
+        parser.parse_statement().unwrap(),
+        snowflake().verified_stmt("DESC TABLE t TYPE = STAGE"),
+    );
+    assert_eq!(parser.peek_token_ref().token, Token::SemiColon);
+    assert_eq!(
+        Parser::parse_sql(&SnowflakeDialect, sql).unwrap(),
+        vec![
+            snowflake().verified_stmt("DESC TABLE t TYPE = STAGE"),
+            snowflake().verified_stmt("SELECT 1"),
+        ],
+    );
+}
+
+#[cfg(feature = "serde")]
+#[test]
+fn describe_table_type_serde_round_trip_and_legacy_absence() {
+    for sql in [
+        "DESC TABLE t",
+        "DESCRIBE TABLE t TYPE = COLUMNS",
+        "DESC TABLE t TYPE = STAGE",
+    ] {
+        let statement = snowflake().verified_stmt(sql);
+        let value = serde_json::to_value(&statement).unwrap();
+        if sql == "DESC TABLE t" {
+            assert!(value["ExplainTable"].get("describe_type").is_none());
+        }
+        assert_eq!(
+            serde_json::from_value::<Statement>(value).unwrap(),
+            statement
+        );
+    }
+}
+
+#[cfg(feature = "visitor")]
+#[test]
+fn describe_table_type_keeps_relation_visitor() {
+    use core::ops::ControlFlow;
+
+    for selection in ["COLUMNS", "STAGE"] {
+        let mut statement =
+            snowflake().verified_stmt(&format!("DESC TABLE db.app.t TYPE = {selection}"));
+        let mut names = Vec::new();
+        let result: ControlFlow<()> = visit_relations(&statement, |name| {
+            names.push(name.to_string());
+            ControlFlow::Continue(())
+        });
+        assert_eq!(result, ControlFlow::Continue(()));
+        assert_eq!(names, vec!["db.app.t"]);
+        let result: ControlFlow<()> = visit_relations_mut(&mut statement, |name| {
+            *name = ObjectName::from(vec![Ident::new("renamed")]);
+            ControlFlow::Continue(())
+        });
+        assert_eq!(result, ControlFlow::Continue(()));
+        assert_eq!(
+            statement.to_string(),
+            format!("DESC TABLE renamed TYPE = {selection}")
+        );
+    }
 }

@@ -4724,6 +4724,12 @@ pub enum Statement {
         ///
         /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/desc-view)
         has_view_keyword: bool,
+        /// Explicit Snowflake `TYPE = COLUMNS | STAGE` output selection.
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        describe_type: Option<DescribeTableType>,
         /// Table name
         #[cfg_attr(feature = "visitor", visit(with = "visit_relation"))]
         table_name: ObjectName,
@@ -5284,6 +5290,7 @@ impl fmt::Display for Statement {
                 hive_format,
                 has_table_keyword,
                 has_view_keyword,
+                describe_type,
                 table_name,
             } => {
                 write!(f, "{describe_alias} ")?;
@@ -5297,7 +5304,11 @@ impl fmt::Display for Statement {
                     write!(f, "TABLE ")?;
                 }
 
-                write!(f, "{table_name}")
+                write!(f, "{table_name}")?;
+                if let Some(describe_type) = describe_type {
+                    write!(f, " TYPE = {describe_type}")?;
+                }
+                Ok(())
             }
             Statement::DescribeStage {
                 describe_alias,
@@ -9113,6 +9124,26 @@ pub enum DescribeAlias {
     Explain,
     /// `DESC` alias.
     Desc,
+}
+
+/// Output selected by Snowflake `DESCRIBE TABLE ... TYPE = ...`.
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+pub enum DescribeTableType {
+    /// Table columns.
+    Columns,
+    /// Table stage properties.
+    Stage,
+}
+
+impl fmt::Display for DescribeTableType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Columns => "COLUMNS",
+            Self::Stage => "STAGE",
+        })
+    }
 }
 
 impl fmt::Display for DescribeAlias {

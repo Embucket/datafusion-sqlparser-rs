@@ -545,6 +545,10 @@ impl Dialect for SnowflakeDialect {
         true
     }
 
+    fn supports_describe_table_type(&self) -> bool {
+        true
+    }
+
     fn allow_extract_custom(&self) -> bool {
         true
     }
