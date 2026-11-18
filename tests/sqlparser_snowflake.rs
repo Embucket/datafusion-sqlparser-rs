@@ -8512,9 +8512,12 @@ fn describe_table_type_preserves_dialect_and_statement_boundaries() {
     ] {
         assert!(snowflake().parse_sql_statements(sql).is_err(), "{sql}");
     }
-    all_dialects_where(|dialect| !dialect.supports_describe_table_type())
-        .parse_sql_statements("DESC TABLE t TYPE = COLUMNS")
-        .unwrap_err();
+    for dialect in all_dialects_where(|dialect| !dialect.supports_describe_table_type()).dialects {
+        assert!(
+            Parser::parse_sql(&*dialect, "DESC TABLE t TYPE = COLUMNS").is_err(),
+            "{dialect:?}",
+        );
+    }
     let sql = "DESC TABLE t TYPE = STAGE; SELECT 1";
     let mut parser = Parser::new(&SnowflakeDialect).try_with_sql(sql).unwrap();
     assert_eq!(
