@@ -2479,6 +2479,7 @@ impl Spanned for OpenStatement {
 impl Spanned for AlterDatabaseOperation {
     fn span(&self) -> Span {
         match self {
+            Self::RenameTo { new_name } => new_name.span,
             Self::SetOptions { options } => union_spans(options.iter().map(|i| i.span())),
             Self::UnsetOptions { options } => union_spans(options.iter().map(|i| i.span)),
         }

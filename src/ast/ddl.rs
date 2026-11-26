@@ -3808,7 +3808,7 @@ impl fmt::Display for CreateConnector {
     }
 }
 
-/// A native Snowflake `ALTER DATABASE` property operation.
+/// A native Snowflake `ALTER DATABASE` operation.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
@@ -3823,11 +3823,17 @@ pub enum AlterDatabaseOperation {
         /// Ordered property names, including duplicates.
         options: Vec<Ident>,
     },
+    /// Rename an account-level database to an unqualified identifier.
+    RenameTo {
+        /// The new database identifier.
+        new_name: Ident,
+    },
 }
 
 impl fmt::Display for AlterDatabaseOperation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::RenameTo { new_name } => write!(f, "RENAME TO {new_name}"),
             Self::SetOptions { options } => write!(f, "SET {}", display_separated(options, " ")),
             Self::UnsetOptions { options } => {
                 write!(f, "UNSET {}", display_comma_separated(options))
@@ -3847,7 +3853,7 @@ pub struct AlterDatabase {
     pub name: ObjectName,
     /// Whether `IF EXISTS` was specified.
     pub if_exists: bool,
-    /// The property operations to perform on the database.
+    /// The operations to perform on the database.
     pub operations: Vec<AlterDatabaseOperation>,
 }
 

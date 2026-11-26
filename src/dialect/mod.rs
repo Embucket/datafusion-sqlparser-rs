@@ -1539,6 +1539,13 @@ pub trait Dialect: Debug + Any {
         false
     }
 
+    /// Returns true if `ALTER DATABASE [IF EXISTS] name RENAME TO new_name` is supported.
+    ///
+    /// [Snowflake](https://docs.snowflake.com/en/sql-reference/sql/alter-database)
+    fn supports_alter_database_rename(&self) -> bool {
+        false
+    }
+
     /// Returns true if the dialect supports the `USING` clause in an `ALTER COLUMN` statement.
     /// Example:
     ///  ```sql
