@@ -10806,7 +10806,10 @@ impl<'a> Parser<'a> {
 
     /// Parse an `ALTER <object>` statement and dispatch to the appropriate alter handler.
     pub fn parse_alter(&mut self) -> Result<Statement, ParserError> {
-        if self.peek_keyword(Keyword::DATABASE) && self.dialect.supports_alter_database_options() {
+        if self.peek_keyword(Keyword::DATABASE)
+            && (self.dialect.supports_alter_database_options()
+                || self.dialect.supports_alter_database_rename())
+        {
             self.prev_token();
             return self.parse_alter_database();
         }
@@ -11583,9 +11586,11 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse a native `ALTER DATABASE` primitive property statement.
+    /// Parse a native `ALTER DATABASE` rename or primitive property statement.
     pub fn parse_alter_database(&mut self) -> Result<Statement, ParserError> {
-        if !self.dialect.supports_alter_database_options() {
+        let properties = self.dialect.supports_alter_database_options();
+        let rename = self.dialect.supports_alter_database_rename();
+        if !properties && !rename {
             return self.expected_ref(
                 "dialect supporting ALTER DATABASE properties",
                 self.peek_token_ref(),
@@ -11594,14 +11599,36 @@ impl<'a> Parser<'a> {
         self.expect_keywords(&[Keyword::ALTER, Keyword::DATABASE])?;
         let if_exists = self.parse_keywords(&[Keyword::IF, Keyword::EXISTS]);
         let name = self.parse_object_name(false)?;
-        let operation = if self.parse_keyword(Keyword::SET) {
+        let operation = if rename && self.parse_keywords(&[Keyword::RENAME, Keyword::TO]) {
+            if !matches!(name.0.as_slice(), [part] if part.as_ident().is_some_and(|ident|
+                !ident.value.is_empty() && matches!(ident.quote_style, None | Some('"'))))
+            {
+                return parser_err!(
+                    "ALTER DATABASE RENAME requires an unqualified database name",
+                    name.span().start
+                );
+            }
+            if !matches!(&self.peek_token_ref().token, Token::Word(word)
+                if !word.value.is_empty() && matches!(word.quote_style, None | Some('"')))
+            {
+                return self.expected_ref("new database identifier", self.peek_token_ref());
+            }
+            AlterDatabaseOperation::RenameTo {
+                new_name: self.parse_identifier()?,
+            }
+        } else if properties && self.parse_keyword(Keyword::SET) {
             let options = self.parse_alter_namespace_set_options("database")?;
             AlterDatabaseOperation::SetOptions { options }
-        } else if self.parse_keyword(Keyword::UNSET) {
+        } else if properties && self.parse_keyword(Keyword::UNSET) {
             let options = self.parse_alter_namespace_unset_options("database")?;
             AlterDatabaseOperation::UnsetOptions { options }
         } else {
-            return self.expected_ref("ALTER DATABASE property operation", self.peek_token_ref());
+            let expected = match (properties, rename) {
+                (true, false) => "ALTER DATABASE property operation",
+                (false, true) => "ALTER DATABASE RENAME TO",
+                _ => "ALTER DATABASE operation",
+            };
+            return self.expected_ref(expected, self.peek_token_ref());
         };
         Ok(AlterDatabase {
             name,

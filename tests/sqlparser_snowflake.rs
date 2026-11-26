@@ -25,7 +25,7 @@ use sqlparser::ast::helpers::stmt_data_loading::{
 };
 use sqlparser::ast::*;
 use sqlparser::dialect::{Dialect, GenericDialect, SnowflakeDialect};
-use sqlparser::parser::{ParserError, ParserOptions};
+use sqlparser::parser::{Parser, ParserError, ParserOptions};
 use sqlparser::tokenizer::*;
 use test_utils::*;
 
@@ -7818,7 +7818,13 @@ fn snowflake_alter_database_options_reject_malformed_and_complex_forms() {
         "UNSET CONTACT STEWARD",
         "UNSET FEATURE POLICY",
         "SWAP WITH other",
-        "RENAME TO other",
+        "RENAME",
+        "RENAME other",
+        "RENAME TO",
+        "RENAME TO; SELECT 1",
+        "RENAME TO 'other'",
+        "RENAME TO other.extra",
+        "RENAME TO other SET COMMENT = 'x'",
         "REFRESH",
         "ENABLE REPLICATION TO ACCOUNTS other",
         "DISABLE REPLICATION",
@@ -7871,8 +7877,11 @@ fn snowflake_alter_database_options_are_dialect_gated() {
     }
 
     #[derive(Debug)]
-    struct DatabaseOptionsDialect;
-    impl Dialect for DatabaseOptionsDialect {
+    struct CustomAlterDatabaseDialect {
+        properties: bool,
+        rename: bool,
+    }
+    impl Dialect for CustomAlterDatabaseDialect {
         fn is_identifier_start(&self, ch: char) -> bool {
             ch.is_ascii_alphabetic() || ch == '_'
         }
@@ -7880,15 +7889,38 @@ fn snowflake_alter_database_options_are_dialect_gated() {
             self.is_identifier_start(ch) || ch.is_ascii_digit()
         }
         fn supports_alter_database_options(&self) -> bool {
-            true
+            self.properties
+        }
+        fn supports_alter_database_rename(&self) -> bool {
+            self.rename
         }
     }
-    assert!(!DatabaseOptionsDialect.supports_alter_schema_options());
-    let sql = "ALTER DATABASE DB_META SET COMMENT = 'x', DATA_RETENTION_TIME_IN_DAYS = -1";
-    assert_eq!(
-        Parser::parse_sql(&DatabaseOptionsDialect, sql).unwrap(),
-        Parser::parse_sql(&SnowflakeDialect, sql).unwrap()
-    );
+    let set = "ALTER DATABASE DB_META SET COMMENT = 'x', DATA_RETENTION_TIME_IN_DAYS = -1";
+    let unset = "ALTER DATABASE DB_META UNSET COMMENT";
+    let rename = "ALTER DATABASE DB_META RENAME TO DB_NEW";
+    for (properties, allow_rename) in [(true, false), (false, true)] {
+        let dialect = CustomAlterDatabaseDialect {
+            properties,
+            rename: allow_rename,
+        };
+        assert!(!dialect.supports_alter_schema_options());
+        for (sql, allowed) in [
+            (set, properties),
+            (unset, properties),
+            (rename, allow_rename),
+        ] {
+            let full = Parser::parse_sql(&dialect, sql);
+            let mut direct = Parser::new(&dialect).try_with_sql(sql).unwrap();
+            if allowed {
+                let expected = Parser::parse_sql(&SnowflakeDialect, sql).unwrap();
+                assert_eq!(full.unwrap(), expected);
+                assert_eq!(direct.parse_alter_database().unwrap(), expected[0]);
+            } else {
+                assert!(full.is_err(), "{sql}");
+                assert!(direct.parse_alter_database().is_err(), "{sql}");
+            }
+        }
+    }
 }
 
 #[test]
@@ -8375,4 +8407,82 @@ fn snowflake_create_schema_modifiers_serde_round_trip_and_old_ast_defaults() {
         );
     }
     assert_eq!(serde_json::from_value::<Statement>(old).unwrap(), plain);
+}
+
+#[test]
+fn snowflake_alter_database_rename_preserves_identifiers_and_boundary() {
+    for (sql, old, new, if_exists) in [
+        (
+            "ALTER DATABASE old_db RENAME TO new_db",
+            Ident::new("old_db"),
+            Ident::new("new_db"),
+            false,
+        ),
+        (
+            r#"ALTER DATABASE IF EXISTS "Old.Db" RENAME TO "New;Db""#,
+            Ident::with_quote('"', "Old.Db"),
+            Ident::with_quote('"', "New;Db"),
+            true,
+        ),
+    ] {
+        let expected = Statement::AlterDatabase(AlterDatabase {
+            name: ObjectName::from(vec![old]),
+            if_exists,
+            operations: vec![AlterDatabaseOperation::RenameTo { new_name: new }],
+        });
+        assert_eq!(snowflake().verified_stmt(sql), expected);
+        let batch = format!("{sql}; SELECT 2");
+        let mut parser = Parser::new(&SnowflakeDialect).try_with_sql(&batch).unwrap();
+        assert_eq!(parser.parse_statement().unwrap(), expected);
+        assert_eq!(parser.peek_token_ref().token, Token::SemiColon);
+        assert_eq!(
+            Parser::parse_sql(&SnowflakeDialect, &batch).unwrap(),
+            vec![expected, snowflake().verified_stmt("SELECT 2")]
+        );
+    }
+    for sql in [
+        "ALTER DATABASE db.schema RENAME TO new_db",
+        "ALTER DATABASE 'old' RENAME TO new_db",
+        r#"ALTER DATABASE old_db RENAME TO """#,
+    ] {
+        assert!(Parser::parse_sql(&SnowflakeDialect, sql).is_err(), "{sql}");
+    }
+    assert!(Parser::parse_sql(&GenericDialect, "ALTER DATABASE old_db RENAME TO new_db").is_err());
+}
+
+#[test]
+fn snowflake_alter_database_rename_operation_span_is_the_destination() {
+    let sql = "ALTER DATABASE old_db RENAME TO\n \"New.Db\"";
+    let statements = Parser::parse_sql(&SnowflakeDialect, sql).unwrap();
+    let Statement::AlterDatabase(database) = &statements[0] else {
+        panic!("expected ALTER DATABASE");
+    };
+    assert_eq!(
+        database.operations[0].span(),
+        Span::new(Location::new(2, 2), Location::new(2, 10))
+    );
+}
+
+#[cfg(all(feature = "serde", feature = "serde_json"))]
+#[test]
+fn snowflake_alter_database_rename_serde_round_trip() {
+    let statement = snowflake().verified_stmt(r#"ALTER DATABASE old_db RENAME TO "New.Db""#);
+    let bytes = serde_json::to_vec(&statement).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<Statement>(&bytes).unwrap(),
+        statement
+    );
+}
+
+#[cfg(feature = "visitor")]
+#[test]
+fn snowflake_alter_database_rename_does_not_visit_account_names_as_relations() {
+    use core::ops::ControlFlow;
+    use sqlparser::ast::visit_relations;
+
+    let statement = snowflake().verified_stmt("ALTER DATABASE old_db RENAME TO new_db");
+    assert_eq!(
+        visit_relations(&statement, |_| ControlFlow::Break("unexpected relation")),
+        ControlFlow::Continue(())
+    );
 }
